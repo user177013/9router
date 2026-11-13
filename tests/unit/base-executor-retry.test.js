@@ -21,7 +21,9 @@ function makeExec(config) {
 
 const creds = { apiKey: "k" };
 
-beforeEach(() => fetchMock.mockReset());
+beforeEach(() => {
+  fetchMock.mockReset();
+});
 
 describe("BaseExecutor.execute — retry by status (config-driven)", () => {
   it("retries 502 `attempts` times then succeeds", async () => {
@@ -81,6 +83,32 @@ describe("BaseExecutor.execute — network error retry/fallback", () => {
     }
     expect(thrown?.message).toBe("boom");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports an exhausted internal connect timeout as a network error, not AbortError", async () => {
+    vi.useFakeTimers();
+    const ex = makeExec({ baseUrl: "https://x/api", retry: { 502: { attempts: 0, delayMs: 0 } } });
+    fetchMock.mockImplementation((_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+    }));
+
+    const result = ex.execute({
+      model: "m",
+      body: {},
+      stream: false,
+      credentials: creds,
+      connectTimeoutMs: 10,
+    });
+    try {
+      const failure = expect(result).rejects.toMatchObject({
+        name: "Error",
+        message: "fetch connect timeout",
+      });
+      await vi.advanceTimersByTimeAsync(10);
+      await failure;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

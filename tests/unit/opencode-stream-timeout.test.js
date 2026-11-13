@@ -96,15 +96,37 @@ describe("OpenCode streaming timeout (#5334)", () => {
     nativeFetch.mockImplementation((_url, options) => new Promise((_resolve, reject) => {
       options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
     }));
+    const controller = new AbortController();
+    const result = new OpenCodeExecutor().execute({
+      model: "deepseek-v4.1-flash-free",
+      body: { messages: [{ role: "user", content: "hello" }], stream: true },
+      stream: true,
+      credentials: {},
+      signal: controller.signal,
+    });
+    const failure = expect(result).rejects.toMatchObject({ name: "AbortError" });
+    await vi.advanceTimersByTimeAsync(60001);
+    controller.abort(new DOMException("client cancelled", "AbortError"));
+    await failure;
+  });
+
+  it("still applies an explicitly supplied connect timeout", async () => {
+    nativeFetch.mockImplementation((_url, options) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
+    }));
     const executor = new OpenCodeExecutor();
-    executor.config = { ...executor.config, timeoutMs: 10, retry: { 502: 0 } };
+    executor.config = { ...executor.config, retry: { 502: 0 } };
     const result = executor.execute({
       model: "deepseek-v4.1-flash-free",
       body: { messages: [{ role: "user", content: "hello" }], stream: true },
       stream: true,
       credentials: {},
+      connectTimeoutMs: 10,
     });
-    const failure = expect(result).rejects.toThrow("fetch connect timeout");
+    const failure = expect(result).rejects.toMatchObject({
+      name: "Error",
+      message: "fetch connect timeout",
+    });
     await vi.advanceTimersByTimeAsync(10);
     await failure;
   });

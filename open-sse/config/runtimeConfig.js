@@ -63,6 +63,12 @@ export const EMPTY_PEEK_DEADLINE_MS = envMs("EMPTY_PEEK_DEADLINE_MS", 45 * 1000)
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
+// OpenCode streams can spend minutes uploading large multimodal requests before headers arrive.
+export const OPENCODE_FETCH_CONNECT_TIMEOUT_MS = envMs(
+  "OPENCODE_FETCH_CONNECT_TIMEOUT_MS",
+  Math.max(FETCH_CONNECT_TIMEOUT_MS, 30 * 60 * 1000)
+);
+
 // Keep-alive socket TTL. Cap it below upstream/edge idle windows (Cloudflare, AWS Global
 // Accelerator / NVIDIA NIM) that drop idle sockets without a TCP RST. keepAliveMaxTimeout is
 // clamped to the same value so an upstream `Keep-Alive` header cannot extend it to 600s.

@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Fixes
+- **OpenCode**: allow 30 minutes by default for streamed request uploads before response headers, and report exhausted internal connect timeouts as gateway errors instead of client-abort 499s
 - **Kiro**: share a current, consistently formatted IDE identity across inference, model catalog, and API-key validation requests to prevent unsupported-client-version errors.
 - **Transport**: negotiate TLS curves by default instead of forcing X25519, fixing AWS OIDC connection resets while retaining the explicit curve override and existing certificate-verification policy.
 

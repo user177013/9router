@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
+import { MEMORY_CONFIG, OPENCODE_FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
@@ -479,7 +479,12 @@ export class OpenCodeExecutor extends BaseExecutor {
     });
     // wreq-js tunnels the proxy itself; adapters that cannot must stay on undici.
     directFetch.proxyCapable = true;
-    const run = () => super.execute({ ...args, credentials, directFetch });
+    const run = () => super.execute({
+      ...args,
+      credentials,
+      directFetch,
+      connectTimeoutMs: args.connectTimeoutMs ?? (args.stream ? OPENCODE_FETCH_CONNECT_TIMEOUT_MS : undefined),
+    });
 
     // The free lane sheds load with 429 "The inference service is overloaded.
     // Please try again later." even after the request passes the TLS gate, and

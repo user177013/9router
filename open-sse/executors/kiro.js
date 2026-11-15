@@ -230,7 +230,7 @@ export class KiroExecutor extends BaseExecutor {
   buildHeaders(credentials, stream = true, url = "") {
     const headers = {
       ...this.config.headers,
-      ...buildKiroIdentityHeaders(credentials),
+      ...buildKiroIdentityHeaders(credentials, "streaming"),
       "Amz-Sdk-Request": "attempt=1; max=3",
       "Amz-Sdk-Invocation-Id": uuidv4()
     };

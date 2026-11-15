@@ -276,6 +276,7 @@ export class KiroService {
         "x-amz-target": "AmazonCodeWhispererService.ListAvailableProfiles",
         "Authorization": `Bearer ${accessToken}`,
         "Accept": "application/json",
+        ...buildKiroIdentityHeaders({ accessToken }),
       },
       body: JSON.stringify({ maxResults: 10 }),
     });
@@ -363,6 +364,7 @@ export class KiroService {
         "x-amz-target": target,
         "Authorization": `Bearer ${accessToken}`,
         "Accept": "application/json",
+        ...buildKiroIdentityHeaders({ accessToken, providerSpecificData: { profileArn } }),
       },
       body: JSON.stringify({
         origin: "AI_EDITOR",

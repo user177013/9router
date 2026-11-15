@@ -5,6 +5,7 @@ import { buildKiroIdentityHeaders } from "../../open-sse/shared/kiroHeaders.js";
 import { KiroExecutor } from "../../open-sse/executors/kiro.js";
 import { resolveKiroModels, clearKiroModelCache } from "../../open-sse/services/kiroModels.js";
 import { KiroService } from "../../src/lib/oauth/services/kiro.js";
+import { fetchKiroProfileArn } from "../../src/lib/oauth/providerHelpers.js";
 
 const fingerprint = (seed) => createHash("sha256").update(seed).digest("hex");
 const credentials = {
@@ -13,9 +14,10 @@ const credentials = {
   providerSpecificData: { clientId: "test-client-id", authMethod: "builder-id" },
 };
 
-function expectIdentity(headers, seed) {
+function expectIdentity(headers, seed, api = "codewhispererruntime") {
   const identity = `KiroIDE-${KIRO_IDE_VERSION}-${fingerprint(seed)}`;
   expect(headers["User-Agent"]).toContain(identity);
+  expect(headers["User-Agent"]).toContain(`api/${api}#1.0.0`);
   expect(headers["x-amz-user-agent"]).toBe(`aws-sdk-js/1.0.0 ${identity}`);
   expect(headers["User-Agent"]).not.toContain("kiro-ide/");
   expect(headers["X-Amz-User-Agent"]).toBeUndefined();
@@ -59,7 +61,7 @@ describe("Kiro client identity", () => {
     };
     const headers = new KiroExecutor().buildHeaders(auth, true,
       "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse");
-    expectIdentity(headers, "test-client-id");
+    expectIdentity(headers, "test-client-id", "codewhispererstreaming");
     expect(headers.Authorization).toBe("Bearer test-access-token");
     expect(headers.TokenType).toBe(authMethod === "api_key" ? "API_KEY" : authMethod === "external_idp" ? "EXTERNAL_IDP" : undefined);
     expect(headers["X-Amz-Target"]).toBe("AmazonCodeWhispererStreamingService.GenerateAssistantResponse");
@@ -99,5 +101,27 @@ describe("Kiro client identity", () => {
     expect(init.headers).toMatchObject({ Authorization: "Bearer test-api-key", TokenType: "API_KEY" });
     expect(buildKiroIdentityHeaders({ accessToken: "test-api-key", providerSpecificData: { authMethod: "api_key" } }))
       .toEqual(buildKiroIdentityHeaders({ apiKey: "test-api-key" }));
+  });
+
+  it("uses the runtime identity for both profile lookups and model discovery", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        profiles: [{ arn: "arn:aws:codewhisperer:us-east-1:123456789012:profile/ABC" }],
+        models: [{ modelId: "auto" }],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new KiroService();
+
+    const profileArn = "arn:aws:codewhisperer:us-east-1:123456789012:profile/ABC";
+    await fetchKiroProfileArn("test-access-token");
+    await service.listAvailableProfiles("test-access-token");
+    await service.listAvailableModels("test-access-token", profileArn);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expectIdentity(fetchMock.mock.calls[0][1].headers, "test-access-token");
+    expectIdentity(fetchMock.mock.calls[1][1].headers, "test-access-token");
+    expectIdentity(fetchMock.mock.calls[2][1].headers, profileArn);
   });
 });

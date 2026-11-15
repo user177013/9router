@@ -5,10 +5,11 @@ import {
   KIRO_AGENT_OS,
   KIRO_AGENT_OS_VERSION,
   KIRO_NODE_VERSION,
+  KIRO_SDK_CLIENTS,
 } from "../config/kiroClient.js";
 
 /** Share the catalog's stable per-account identity with inference and API-key validation. */
-export function buildKiroIdentityHeaders(credentials) {
+export function buildKiroIdentityHeaders(credentials, client = "runtime") {
   const seed =
     credentials?.providerSpecificData?.clientId
     || credentials?.refreshToken
@@ -18,13 +19,14 @@ export function buildKiroIdentityHeaders(credentials) {
     || "kiro-anonymous";
   const machineId = createHash("sha256").update(String(seed)).digest("hex");
   const identity = `KiroIDE-${KIRO_IDE_VERSION}-${machineId}`;
+  const { api, metrics } = KIRO_SDK_CLIENTS[client] || KIRO_SDK_CLIENTS.runtime;
 
   return {
     "User-Agent":
       `aws-sdk-js/${KIRO_RUNTIME_SDK_VERSION} ua/2.1 ` +
       `os/${KIRO_AGENT_OS}#${KIRO_AGENT_OS_VERSION} ` +
       `lang/js md/nodejs#${KIRO_NODE_VERSION} ` +
-      `api/codewhispererruntime#${KIRO_RUNTIME_SDK_VERSION} m/N,E ${identity}`,
+      `api/${api}#${KIRO_RUNTIME_SDK_VERSION} m/${metrics} ${identity}`,
     "x-amz-user-agent": `aws-sdk-js/${KIRO_RUNTIME_SDK_VERSION} ${identity}`,
   };
 }

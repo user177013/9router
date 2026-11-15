@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { buildKiroIdentityHeaders } from "../../open-sse/shared/kiroHeaders.js";
 
 const originalFetch = global.fetch;
 const TEST_CLIENT_ID = "00000000-0000-4000-8000-000000000000";
@@ -139,6 +140,37 @@ describe("Kiro external_idp (CLIProxyAPI) import and refresh", () => {
     expect(calls[0].init.headers.Authorization).toBe("Bearer microsoft-access-token");
     expect(calls[0].init.headers.TokenType).toBe("EXTERNAL_IDP");
     expect(calls[0].init.headers.tokentype).toBeUndefined();
+    expect(calls[0].init.headers).toMatchObject(
+      buildKiroIdentityHeaders({
+        accessToken: "microsoft-access-token",
+        providerSpecificData: {
+          authMethod: "external_idp",
+          profileArn: "arn:aws:codewhisperer:us-east-1:123456789012:profile/ABC",
+        },
+      })
+    );
+  });
+
+  it("sends the current runtime identity on every usage endpoint attempt", async () => {
+    const calls = [];
+    vi.doMock("../../open-sse/utils/proxyFetch.js", () => ({
+      proxyAwareFetch: vi.fn(async (url, init) => {
+        calls.push({ url, init });
+        return { ok: false, status: 500, text: async () => "" };
+      }),
+    }));
+
+    const { getKiroUsage } = await import("../../open-sse/services/usage/kiro.js");
+    const providerSpecificData = { authMethod: "builder-id" };
+    const result = await getKiroUsage("builder-access-token", providerSpecificData);
+
+    expect(result.message).toMatch(/Unable to fetch Kiro usage/);
+    expect(calls).toHaveLength(3);
+    for (const { init } of calls) {
+      expect(init.headers).toMatchObject(
+        buildKiroIdentityHeaders({ accessToken: "builder-access-token", providerSpecificData })
+      );
+    }
   });
 
   it("imports CLIProxyAPI external_idp JSON as a Kiro OAuth connection", async () => {

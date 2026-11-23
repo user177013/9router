@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { KIRO_IDE_VERSION } from "../../open-sse/config/kiroClient.js";
-import { buildKiroIdentityHeaders } from "../../open-sse/shared/kiroHeaders.js";
+import { buildKiroIdentityHeaders } from "../../open-sse/shared/kiroIdentity.js";
 import { KiroExecutor } from "../../open-sse/executors/kiro.js";
 import { resolveKiroModels, clearKiroModelCache } from "../../open-sse/services/kiroModels.js";
 import { KiroService } from "../../src/lib/oauth/services/kiro.js";

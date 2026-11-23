@@ -5,7 +5,7 @@
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { resolveDefaultProfileArn } from "../../config/kiroConstants.js";
 import { U, parseResetTime } from "./shared.js";
-import { buildKiroIdentityHeaders } from "../../shared/kiroHeaders.js";
+import { buildKiroIdentityHeaders } from "../../shared/kiroIdentity.js";
 
 /**
  * Kiro (AWS CodeWhisperer) Usage
@@ -59,6 +59,8 @@ export async function getKiroUsage(accessToken, providerSpecificData, proxyOptio
   const isExternalIdp = authMethod === "external_idp";
   const apiKeyHeaders = isApiKey ? { tokentype: "API_KEY" } : {};
   const externalIdpHeaders = isExternalIdp ? { TokenType: "EXTERNAL_IDP" } : {};
+  // Same identity as inference on every attempt, so the quota call passes Kiro's
+  // client-version gate too (#5613).
   const identityHeaders = buildKiroIdentityHeaders({ accessToken, providerSpecificData });
 
   // For api-key auth, never inject the shared default placeholder profileArn —

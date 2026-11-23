@@ -1,4 +1,4 @@
-import { buildKiroIdentityHeaders } from "../../../open-sse/shared/kiroHeaders.js";
+import { buildKiroIdentityHeaders } from "open-sse/shared/kiroIdentity.js";
 
 const BASE64_BLOCK_SIZE = 4;
 

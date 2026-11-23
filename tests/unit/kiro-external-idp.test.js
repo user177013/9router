@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { buildKiroIdentityHeaders } from "../../open-sse/shared/kiroHeaders.js";
+import { buildKiroIdentityHeaders } from "../../open-sse/shared/kiroIdentity.js";
 
 const originalFetch = global.fetch;
 const TEST_CLIENT_ID = "00000000-0000-4000-8000-000000000000";

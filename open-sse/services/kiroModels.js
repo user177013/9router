@@ -22,7 +22,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { createHash } from "crypto";
 import { refreshKiroToken } from "./tokenRefresh.js";
-import { buildKiroIdentityHeaders } from "../shared/kiroHeaders.js";
+import { buildKiroIdentityHeaders } from "../shared/kiroIdentity.js";
 
 const DEFAULT_REGION = "us-east-1";
 const FETCH_TIMEOUT_MS = 30_000;
@@ -61,7 +61,7 @@ function regionFromProfileArn(profileArn) {
  */
 function buildKiroFingerprintHeaders(credentials) {
   return {
-    ...buildKiroIdentityHeaders(credentials),
+    ...buildKiroIdentityHeaders(credentials, "runtime"),
     "x-amzn-kiro-agent-mode": "vibe",
     "x-amzn-codewhisperer-optout": "true",
     "amz-sdk-request": "attempt=1; max=1",

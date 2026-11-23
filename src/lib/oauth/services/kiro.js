@@ -1,5 +1,5 @@
 import { KIRO_CONFIG, assertValidAwsRegion } from "../constants/oauth.js";
-import { buildKiroIdentityHeaders } from "../../../../open-sse/shared/kiroHeaders.js";
+import { buildKiroIdentityHeaders } from "open-sse/shared/kiroIdentity.js";
 
 /**
  * Kiro OAuth Service

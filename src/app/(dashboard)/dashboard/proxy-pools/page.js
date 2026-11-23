@@ -115,9 +115,12 @@ export default function ProxyPoolsPage() {
 
   useEffect(() => {
     if (!hasWarpPool) return;
-    fetchWarpStatus();
+    const initialFetch = setTimeout(fetchWarpStatus, 0);
     const timer = setInterval(fetchWarpStatus, 10000);
-    return () => clearInterval(timer);
+    return () => {
+      clearTimeout(initialFetch);
+      clearInterval(timer);
+    };
   }, [hasWarpPool, fetchWarpStatus]);
 
   const handleHop = async () => {

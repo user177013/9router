@@ -63,6 +63,17 @@ export function createSSEStream(options = {}) {
 
   let buffer = "";
   let usage = null;
+  const backfillModelOnChunk = (item) => {
+    if (!item || typeof item !== "object") return item;
+    if (!item.model && model) item.model = model;
+    if (item.message && typeof item.message === "object" && !item.message.model && model) {
+      item.message.model = model;
+    }
+    if (item.response && typeof item.response === "object" && !item.response.model && model) {
+      item.response.model = model;
+    }
+    return item;
+  };
 
   // Tool-call ids already sent to the client, keyed by the tool-call index.
   // A late fragment that opens a NEW index without an id must not reach the
@@ -140,6 +151,7 @@ export function createSSEStream(options = {}) {
     const completed = translateResponse(targetFormat, sourceFormat, null, state);
     for (const item of completed || []) {
       if (item === null || item === undefined) continue;
+      backfillModelOnChunk(item);
       const output = formatSSE(item, sourceFormat);
       reqLogger?.appendConvertedChunk?.(output);
       controller.enqueue(sharedEncoder.encode(output));
@@ -211,6 +223,10 @@ export function createSSEStream(options = {}) {
               if (parsed.choices !== undefined) {
                 if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
                 if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
+                if (!parsed.model && model) { parsed.model = model; fieldsInjected = true; }
+              } else if (!parsed.model && model) {
+                parsed.model = model;
+                fieldsInjected = true;
               }
 
               // Strip Azure-specific non-standard fields from streaming chunks
@@ -450,6 +466,7 @@ export function createSSEStream(options = {}) {
               item.usage = filterUsageForFormat(buffered, sourceFormat);
             }
 
+            backfillModelOnChunk(item);
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
@@ -538,6 +555,7 @@ export function createSSEStream(options = {}) {
             if (translated?.length > 0) {
               for (const item of translated) {
                 if (item === null || item === undefined) continue;
+                backfillModelOnChunk(item);
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
                 controller.enqueue(sharedEncoder.encode(output));
@@ -558,6 +576,7 @@ export function createSSEStream(options = {}) {
         if (flushed?.length > 0) {
           for (const item of flushed) {
             if (item === null || item === undefined) continue;
+            backfillModelOnChunk(item);
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));

@@ -52,7 +52,7 @@ function extractCustomToolInput(argumentsValue) {
   return argumentsText;
 }
 
-function chatCompletionToResponses(responseBody, customToolNames = null) {
+function chatCompletionToResponses(responseBody, customToolNames = null, fallbackModel = null) {
   const choice = responseBody?.choices?.[0];
   if (!choice) return responseBody;
 
@@ -95,7 +95,7 @@ function chatCompletionToResponses(responseBody, customToolNames = null) {
     id: `resp_${responseBody.id || ""}`.replace(/^resp_chatcmpl-/, "resp_"),
     object: "response",
     created_at: responseBody.created || Math.floor(Date.now() / 1000),
-    model: responseBody.model || "unknown",
+    model: responseBody.model || fallbackModel || "unknown",
     status: "completed",
     background: false,
     error: null,
@@ -367,7 +367,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     // nonStreamingHandler.js) to avoid a circular import: nonStreamingHandler
     // already imports parseSSEToOpenAIResponse from this module.
     const finalBody = sourceFormat === FORMATS.OPENAI_RESPONSES
-      ? chatCompletionToResponses(parsed, customToolNames)
+      ? chatCompletionToResponses(parsed, customToolNames, model)
       : sourceFormat === FORMATS.CLAUDE
         ? openAICompletionToClaudeMessage(parsed)
         : parsed;

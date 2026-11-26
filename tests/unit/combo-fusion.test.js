@@ -5,8 +5,11 @@ import { handleFusionChat } from "../../open-sse/services/combo.js";
 const log = { info: () => {}, warn: () => {}, debug: () => {} };
 
 // Minimal OpenAI-chat Response stub with the .ok + .clone().json() surface the engine uses.
-function okResponse(content, { delayMs = 0 } = {}) {
-  const json = { choices: [{ message: { role: "assistant", content } }] };
+function okResponse(content, { delayMs = 0, model } = {}) {
+  const json = {
+    ...(model ? { model } : {}),
+    choices: [{ message: { role: "assistant", content } }]
+  };
   const make = () => ({ ok: true, status: 200, clone: make, json: async () => json });
   const res = make();
   return delayMs > 0 ? new Promise((r) => setTimeout(() => r(res), delayMs)) : res;
@@ -69,6 +72,30 @@ describe("fusion combo", () => {
     expect(isPanel).toBeUndefined();
 
     expect(res.ok).toBe(true);
+  });
+
+  it("returns an actual-run model array for fusion, preferring upstream model ids", async () => {
+    const handleSingleModel = vi.fn(async (_body, model) => {
+      if (model === "p/judge") return okResponse("FINAL", { model: "judge-upstream" });
+      if (model === "p/a") return okResponse("ans-a", { model: "panel-a-upstream" });
+      if (model === "p/b") return okResponse("ans-b");
+      return errResponse(500);
+    });
+
+    const res = await handleFusionChat({
+      body: { messages: [{ role: "user", content: "Q" }], stream: false },
+      models: ["p/a", "p/b", "p/c"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge",
+    });
+
+    const json = await res.clone().json();
+    expect(json.model).toEqual([
+      { role: "judge", model: "judge-upstream" },
+      { role: "panel", model: "panel-a-upstream" },
+      { role: "panel", model: "p/b" },
+    ]);
   });
 
   it("defaults the judge to the first panel model when none is set", async () => {

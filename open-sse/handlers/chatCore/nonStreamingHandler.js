@@ -30,7 +30,7 @@ function extractCustomToolInput(argumentsValue) {
   return argumentsText;
 }
 
-function openAICompletionToResponses(responseBody, customToolNames = null) {
+function openAICompletionToResponses(responseBody, customToolNames = null, fallbackModel = null) {
   const choice = responseBody?.choices?.[0];
   if (!choice) return responseBody;
 
@@ -78,7 +78,7 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
     id: `resp_${responseBody.id || ""}`.replace(/^resp_chatcmpl-/, "resp_"),
     object: "response",
     created_at: responseBody.created || Math.floor(Date.now() / 1000),
-    model: responseBody.model || "unknown",
+    model: responseBody.model || fallbackModel || "unknown",
     status,
     background: false,
     error: null,
@@ -94,12 +94,12 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
-export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
+export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null, fallbackModel = null) {
   if (targetFormat === sourceFormat) return responseBody;
   // Provider responded in OpenAI Chat Completions shape but the client speaks
   // Responses API — convert so tool_calls/text surface as Responses `output`.
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
-    return openAICompletionToResponses(responseBody, customToolNames);
+    return openAICompletionToResponses(responseBody, customToolNames, fallbackModel);
   }
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
     return openAICompletionToClaudeMessage(responseBody);
@@ -150,7 +150,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
       id: `chatcmpl-${response.responseId || Date.now()}`,
       object: "chat.completion",
       created: Math.floor(new Date(response.createTime || Date.now()).getTime() / 1000),
-      model: response.modelVersion || "gemini",
+      model: response.modelVersion || fallbackModel || "gemini",
       choices: [{ index: 0, message, finish_reason: finishReason }]
     };
 
@@ -209,7 +209,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
       id: `chatcmpl-${responseBody.id || Date.now()}`,
       object: "chat.completion",
       created: Math.floor(Date.now() / 1000),
-      model: responseBody.model || "claude",
+      model: responseBody.model || fallbackModel || "claude",
       choices: [{ index: 0, message, finish_reason: finishReason }]
     };
 
@@ -288,7 +288,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
+    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames, model)
     : responseBody;
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
   // Responses-format translation produces a `object:"response"` body with no
@@ -309,6 +309,9 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   if (!isClaudeMessageResponse && !isResponsesResponse) {
     if (!translatedResponse.object) translatedResponse.object = "chat.completion";
     if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
+  }
+  if (translatedResponse && (typeof translatedResponse.model !== "string" || !translatedResponse.model)) {
+    translatedResponse.model = model;
   }
 
   // Strip Azure-specific fields

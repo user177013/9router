@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Fixes
+- **Chat responses**: backfill missing upstream `model` fields with the actual routed model for single-route requests, and return actual-run `{ role, model }` provenance arrays for fusion combos (`judge` plus only successful `panel` entries).
 - **OpenCode**: allow 30 minutes by default for streamed request uploads before response headers, and report exhausted internal connect timeouts as gateway errors instead of client-abort 499s
 - **Kiro**: share a current, consistently formatted IDE identity across inference, model catalog, usage, profile lookup, and API-key validation requests to prevent unsupported-client-version errors.
 - **Transport**: negotiate TLS curves by default instead of forcing X25519, fixing AWS OIDC connection resets while retaining the explicit curve override and existing certificate-verification policy.

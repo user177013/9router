@@ -794,6 +794,90 @@ function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeoutMs })
   });
 }
 
+function buildFusionModelProvenance(judgeModel, judgeRequestedModel, panelAnswers) {
+  return [
+    { role: "judge", model: judgeModel || judgeRequestedModel },
+    ...panelAnswers.map((answer) => ({
+      role: "panel",
+      model: answer.upstreamModel || answer.requestedModel,
+    })),
+  ];
+}
+
+async function attachFusionModelProvenance(result, judgeRequestedModel, panelAnswers) {
+  if (!result) return result;
+
+  try {
+    if (typeof result.clone === "function") {
+      const clone = result.clone();
+      if (clone && typeof clone.json === "function") {
+        const json = await clone.json();
+        if (json && typeof json === "object") {
+          const provenance = buildFusionModelProvenance(
+            json.model || json.modelVersion,
+            judgeRequestedModel,
+            panelAnswers
+          );
+          const body = { ...json, model: provenance };
+          const headers = result.headers?.entries
+            ? Object.fromEntries(result.headers.entries())
+            : { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" };
+          return new Response(JSON.stringify(body), {
+            status: result.status || 200,
+            statusText: result.statusText,
+            headers,
+          });
+        }
+      }
+    }
+  } catch {
+    // Fall through to stream handling below.
+  }
+
+  if (!result.body || typeof result.body.pipeThrough !== "function") return result;
+
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let judgeModel = null;
+
+  const transform = new TransformStream({
+    transform(chunk, controller) {
+      buffer += decoder.decode(chunk, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        let output = line;
+        const trimmed = line.trim();
+        if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
+          try {
+            const parsed = JSON.parse(trimmed.slice(5).trim());
+            judgeModel = parsed.model || parsed.modelVersion || parsed.message?.model || judgeModel;
+            const provenance = buildFusionModelProvenance(judgeModel, judgeRequestedModel, panelAnswers);
+            parsed.model = provenance;
+            if (parsed.message && typeof parsed.message === "object" && parsed.message.model) {
+              parsed.message.model = provenance;
+            }
+            output = `data: ${JSON.stringify(parsed)}`;
+          } catch {
+            // Preserve non-JSON SSE lines unchanged.
+          }
+        }
+        controller.enqueue(encoder.encode(`${output}\n`));
+      }
+    },
+    flush(controller) {
+      if (buffer) controller.enqueue(encoder.encode(buffer));
+    },
+  });
+
+  return new Response(result.body.pipeThrough(transform), {
+    status: result.status || 200,
+    statusText: result.statusText,
+    headers: result.headers,
+  });
+}
+
 /**
  * Handle a fusion combo: fan the prompt out to every panel model in parallel,
  * then a judge model synthesizes one final answer from all panel responses.
@@ -868,7 +952,14 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
       const json = await res.clone().json();
       const text = extractPanelText(json);
       if (text) {
-        answers.push({ model, text });
+        answers.push({
+          model,
+          text,
+          requestedModel: model,
+          upstreamModel: typeof json?.model === "string" && json.model
+            ? json.model
+            : (typeof json?.modelVersion === "string" && json.modelVersion ? json.modelVersion : null),
+        });
         log.info("FUSION", `Panel ${model} ok (${text.length} chars)`);
       } else {
         log.warn("FUSION", `Panel ${model} returned empty content`);
@@ -894,7 +985,8 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   // 4. Judge analyzes + writes one final answer (streams to client if requested).
   const judgeBody = appendUserTurn(body, buildJudgePrompt(answers));
   log.info("FUSION", `Judging ${answers.length} answers with ${judge}`);
-  return handleSingleModel(judgeBody, judge);
+  const judgeResult = await handleSingleModel(judgeBody, judge);
+  return attachFusionModelProvenance(judgeResult, judge, answers);
 }
 
 export {

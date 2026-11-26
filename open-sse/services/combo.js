@@ -8,6 +8,7 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { parseModel } from "./model.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 import { peekStreamForContent, reconstructStream, isNoRetryFinish } from "./emptyFailover.js";
+import { buildJudgePrompt } from "./fusionJudgePrompt.js";
 import {
   getStickyComboModel,
   setStickyComboModel,
@@ -712,34 +713,6 @@ function appendUserTurn(body, text) {
   return next;
 }
 
-/**
- * Build the judge directive. Per OpenRouter's Fusion design, the judge does NOT
- * merge — it analyzes (consensus / contradictions / partial coverage / unique
- * insights / blind spots) then writes one answer grounded in that analysis.
- * ~3/4 of fusion's quality lift comes from this synthesis step.
- *
- * Sources are anonymized ("Source N") so the judge weighs substance, not the
- * reputation of a model brand.
- */
-function buildJudgePrompt(answers) {
-  const panel = answers
-    .map((a, i) => `[Source ${i + 1}]\n${a.text}`)
-    .join("\n\n");
-
-  return [
-    `You are the JUDGE in a model-fusion panel. ${answers.length} expert models independently answered the user's most recent request. Their responses are below, anonymized by source.`,
-    "",
-    "Do NOT mention that multiple models were used, and do NOT refer to the sources. Produce ONE authoritative final answer addressed directly to the user.",
-    "",
-    "First, internally analyze the panel along these dimensions: consensus (points most sources agree on — treat as higher-confidence), contradictions (where they disagree — resolve with your own judgment), partial coverage, unique insights only one source surfaced, and blind spots every source missed. Then write the best possible final answer grounded in that analysis — more complete and correct than any single response, with no filler.",
-    "",
-    "=== PANEL RESPONSES ===",
-    panel,
-    "=== END PANEL RESPONSES ===",
-    "",
-    "Now write the final answer to the user's original request.",
-  ].join("\n");
-}
 
 // Fusion tuning. Overridable per-combo via settings.comboStrategies[name].
 const FUSION_DEFAULTS = {
@@ -899,9 +872,10 @@ async function attachFusionModelProvenance(result, judgeRequestedModel, panelAns
  * @param {string} [options.comboName] - Combo name (logging)
  * @param {string} [options.judgeModel] - Judge model; falls back to panel[0]
  * @param {Object} [options.tuning] - Override FUSION_DEFAULTS (minPanel, grace, timeout)
+ * @param {string} [options.judgePrompt] - Custom judge directive; blank uses the default
  * @returns {Promise<Response>}
  */
-export async function handleFusionChat({ body, models, handleSingleModel, log, comboName, judgeModel, tuning }) {
+export async function handleFusionChat({ body, models, handleSingleModel, log, comboName, judgeModel, tuning, judgePrompt }) {
   const panel = Array.isArray(models) ? models.filter(Boolean) : [];
   if (panel.length === 0) {
     return new Response(
@@ -983,7 +957,7 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   }
 
   // 4. Judge analyzes + writes one final answer (streams to client if requested).
-  const judgeBody = appendUserTurn(body, buildJudgePrompt(answers));
+  const judgeBody = appendUserTurn(body, buildJudgePrompt(answers, judgePrompt));
   log.info("FUSION", `Judging ${answers.length} answers with ${judge}`);
   const judgeResult = await handleSingleModel(judgeBody, judge);
   return attachFusionModelProvenance(judgeResult, judge, answers);

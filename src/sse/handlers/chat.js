@@ -134,6 +134,7 @@ export async function handleChat(request, clientRawRequest = null) {
         comboName: modelStr,
         judgeModel: comboStrategies[modelStr]?.judgeModel,
         tuning: comboStrategies[modelStr]?.fusionTuning,
+        judgePrompt: comboStrategies[modelStr]?.judgePrompt,
       });
     }
 
@@ -227,6 +228,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           comboName: modelStr,
           judgeModel: comboStrategies[modelStr]?.judgeModel,
           tuning: comboStrategies[modelStr]?.fusionTuning,
+          judgePrompt: comboStrategies[modelStr]?.judgePrompt,
         });
       }
 

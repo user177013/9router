@@ -50,7 +50,7 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     return { Agent, ProxyAgent, fetchMock };
   }
 
-  it.each([undefined, "X25519"])("uses default auto or explicit %s curves for direct and fresh-retry agents without changing TLS verification", async (curveOverride) => {
+  it.each([undefined, "X25519"])("uses default X25519/P-256/P-384 or explicit %s curves for direct and fresh-retry agents without changing TLS verification", async (curveOverride) => {
     if (curveOverride) process.env.NINEROUTER_TLS_ECDH_CURVE = curveOverride;
     const { Agent } = mockUndiciDispatchers();
     const { getDirectDispatcher, getFreshRetryDispatcher } = await import("../../open-sse/utils/proxyFetch.js");
@@ -62,7 +62,7 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     const secureConnect = {
       autoSelectFamily: true,
       autoSelectFamilyAttemptTimeout: 250,
-      ecdhCurve: curveOverride || "auto",
+      ecdhCurve: curveOverride || "X25519:prime256v1:secp384r1",
     };
 
     expect(Agent).toHaveBeenCalledTimes(4);
@@ -80,7 +80,7 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     expect(insecureFresh).not.toBe(fresh);
   });
 
-  it.each([undefined, "X25519"])("uses default auto or explicit %s curves in proxy requestTls and preserves the existing certificate fallback", async (curveOverride) => {
+  it.each([undefined, "X25519"])("uses default X25519/P-256/P-384 or explicit %s curves in proxy requestTls and preserves the existing certificate fallback", async (curveOverride) => {
     if (curveOverride) process.env.NINEROUTER_TLS_ECDH_CURVE = curveOverride;
     const fetchMock = vi.fn()
       .mockRejectedValueOnce(Object.assign(new Error("fetch failed"), { cause: { code: "SELF_SIGNED_CERT_IN_CHAIN" } }))
@@ -103,12 +103,12 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
       expect(secure.options).toEqual({
         uri: "http://127.0.0.1:7890",
         connect: { autoSelectFamily: true, autoSelectFamilyAttemptTimeout: 250 },
-        requestTls: { ecdhCurve: curveOverride || "auto" },
+        requestTls: { ecdhCurve: curveOverride || "X25519:prime256v1:secp384r1" },
       });
       expect(secure.options.requestTls).not.toHaveProperty("rejectUnauthorized");
       expect(insecure.options).toEqual({
         ...secure.options,
-        requestTls: { ecdhCurve: curveOverride || "auto", rejectUnauthorized: false },
+        requestTls: { ecdhCurve: curveOverride || "X25519:prime256v1:secp384r1", rejectUnauthorized: false },
       });
       expect(insecure).not.toBe(secure);
     } finally {
@@ -128,7 +128,7 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     })).rejects.toBe(certError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(Agent).toHaveBeenCalledTimes(1);
-    expect(Agent.mock.calls[0][0].connect.ecdhCurve).toBe("auto");
+    expect(Agent.mock.calls[0][0].connect.ecdhCurve).toBe("X25519:prime256v1:secp384r1");
     expect(Agent.mock.calls[0][0].connect).not.toHaveProperty("rejectUnauthorized");
   });
 

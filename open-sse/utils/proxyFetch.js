@@ -285,10 +285,8 @@ function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
   return normalizeProxyUrl(proxyUrlRaw);
 }
 
-// Use Node/OpenSSL's default curve negotiation for upstream compatibility.
-// Networks that require a specific curve can opt in via NINEROUTER_TLS_ECDH_CURVE
-// (for example, X25519); forcing it globally can cause AWS OIDC TLS resets.
-const TLS_ECDH_CURVE = process.env.NINEROUTER_TLS_ECDH_CURVE || "auto";
+// Keep the DPI-compatible X25519 curve while offering standard fallbacks for AWS OIDC.
+const TLS_ECDH_CURVE = process.env.NINEROUTER_TLS_ECDH_CURVE || "X25519:prime256v1:secp384r1";
 
 // autoSelectFamilyAttemptTimeout = happy eyeballs (RFC 8305): race both address
 // families, fall over in 250ms — replaces the old global ipv4first flag, which fixed

@@ -12,11 +12,13 @@ const STRIP_RULES = [
   { provider: "github", match: /gpt-5\.4/i, drop: ["temperature"] },
   // GitHub Copilot Claude (except opus/sonnet 4.6): thinking + reasoning_effort rejected. #713
   { provider: "github", match: (m) => /claude/i.test(m) && !/claude.*(opus|sonnet).*4\.6/i.test(m), drop: ["thinking", "reasoning_effort"] },
-  // Cloudflare Workers AI: text-only models only accept string content (#1926).
-  // Vision models accept content-part arrays with image_url. Root-level `image`/`images`
-  // fields (non-standard OpenAI, sent by some clients) are rejected by the chat endpoint
-  // schema — strip them to avoid 400 "Type mismatch of '/image', 'string' not in 'array','binary'".
-  { provider: "cloudflare-ai", flattenContent: true, drop: ["image", "images"] },
+  // Cloudflare Workers AI: root-level `image`/`images` (string or array) are non-standard
+  // fields that some clients send alongside chat messages. CF's OpenAI-compatible chat
+  // schema rejects them: `/image` must be `array` or `binary`, not `string` (400 code 5006).
+  // Instead of silently stripping the image data, convert them into standard `image_url`
+  // content parts on the last user message — the shape CF's vision models (moondream,
+  // kimi-k2, mistral-small-3.1, …) actually accept.
+  { provider: "cloudflare-ai", flattenContent: true, mergeRootImagesIntoContent: true, drop: ["image", "images"] },
   { provider: "volcengine-ark", match: /glm-5/i, clampToModelMaxOutput: true },
   // VolcEngine Ark caps the Kimi family at max_tokens <= 32768, but the model's
   // advertised ceiling is far higher (Kimi-K2.7-Code resolves to maxOutput 262144),
@@ -76,6 +78,39 @@ function clampNumber(body, key, ceiling) {
   }
 }
 
+// Convert non-standard root-level `image`/`images` fields into OpenAI
+// `image_url` content parts on the last user message.
+// `image` may be a string or an array of strings; `images` may be an array.
+// Each non-empty value becomes { type: "image_url", image_url: { url } }.
+function mergeRootImagesIntoContent(body) {
+  const urls = [];
+  if (typeof body.image === "string" && body.image) urls.push(body.image);
+  else if (Array.isArray(body.image)) {
+    for (const u of body.image) if (typeof u === "string" && u) urls.push(u);
+  }
+  if (Array.isArray(body.images)) {
+    for (const u of body.images) if (typeof u === "string" && u) urls.push(u);
+  }
+  if (!urls.length) return;
+
+  if (!Array.isArray(body.messages)) return;
+  let lastUserIdx = -1;
+  for (let i = body.messages.length - 1; i >= 0; i--) {
+    if (body.messages[i]?.role === "user") { lastUserIdx = i; break; }
+  }
+  if (lastUserIdx === -1) {
+    body.messages.push({ role: "user", content: [] });
+    lastUserIdx = body.messages.length - 1;
+  }
+  const msg = body.messages[lastUserIdx];
+  if (!Array.isArray(msg.content)) {
+    msg.content = typeof msg.content === "string" ? [{ type: "text", text: msg.content }] : [];
+  }
+  for (const url of urls) {
+    msg.content.push({ type: "image_url", image_url: { url } });
+  }
+}
+
 // Remove unsupported params from body in place; returns body.
 export function stripUnsupportedParams(provider, model, body) {
   if (!model || !body || typeof body !== "object") return body;
@@ -87,6 +122,11 @@ export function stripUnsupportedParams(provider, model, body) {
       if (body[from] === undefined) continue;
       if (body[to] === undefined) body[to] = body[from];
       delete body[from];
+    }
+    // Convert non-standard root image fields into message content parts before
+    // the generic drop removes them — preserves the image data for vision models.
+    if (rule.mergeRootImagesIntoContent && getCapabilitiesForModel(provider, model).vision) {
+      mergeRootImagesIntoContent(body);
     }
     for (const key of rule.drop || []) {
       if (body[key] !== undefined) delete body[key];

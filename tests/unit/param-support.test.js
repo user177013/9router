@@ -54,17 +54,39 @@ describe("stripUnsupportedParams", () => {
     expect(body.messages[1].content[1].type).toBe("image_url");
   });
 
-  it("strips root-level image and images fields for Cloudflare AI chat requests", () => {
+  it("converts root-level image/images fields into image_url content parts for Cloudflare AI vision models", () => {
     const body = {
       messages: [{ role: "user", content: "hi" }],
       image: "data:image/png;base64,xx",
       images: ["data:image/png;base64,yy"],
     };
 
-    stripUnsupportedParams("cloudflare-ai", "@cf/moonshotai/kimi-k2.6", body);
+    stripUnsupportedParams("cloudflare-ai", "@cf/moondream/moondream3.1-9B-A2B", body);
 
+    // Root fields are removed so CF's chat schema no longer 400s on /image.
     expect(body.image).toBeUndefined();
     expect(body.images).toBeUndefined();
+    // Both root images land as image_url parts on the last user message.
+    const content = body.messages[0].content;
+    expect(Array.isArray(content)).toBe(true);
+    expect(content[0]).toEqual({ type: "text", text: "hi" });
+    const imageParts = content.filter((p) => p.type === "image_url");
+    expect(imageParts.map((p) => p.image_url.url)).toEqual([
+      "data:image/png;base64,xx",
+      "data:image/png;base64,yy",
+    ]);
+  });
+
+  it("drops root-level image fields for text-only Cloudflare AI models without adding image parts", () => {
+    const body = {
+      messages: [{ role: "user", content: "hi" }],
+      image: "data:image/png;base64,xx",
+    };
+
+    stripUnsupportedParams("cloudflare-ai", "@cf/meta/llama-3.1-8b-instruct-awq", body);
+
+    expect(body.image).toBeUndefined();
+    // Text-only model: content stays a plain string, no image parts injected.
     expect(body.messages[0].content).toBe("hi");
   });
 

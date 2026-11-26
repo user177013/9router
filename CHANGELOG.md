@@ -1,10 +1,13 @@
 # Unreleased
  
 ## Features
+- **Fusion**: add per-combo tuning controls and a judge directive for more configurable fusion responses.
+- **WARP**: add npm CLI setup support for configuring WARP.
 - **Security**: the gateway now binds to loopback (`127.0.0.1`) by default; reach it on the network only by opting in with `--host 0.0.0.0` (the CLI prints a LAN-exposure warning when you do). Docker/cloud hosting is unchanged because it sets `HOSTNAME=0.0.0.0` explicitly.
 - **Usage**: `/api/usage/request-details` returns full request/response payloads by default for live debugging. Set `REDACT_REQUEST_PAYLOADS=true` to restore the v0.5.59 redaction (payload fields replaced with `{ redacted: true }`).
  
 ## Fixes
+- **Cloudflare AI**: strip root-level `image`/`images` fields from chat bodies to avoid sending unsupported parameters upstream.
 - **Chat responses**: backfill missing upstream `model` fields with the actual routed model for single-route requests, and return actual-run `{ role, model }` provenance arrays for fusion combos (`judge` plus only successful `panel` entries).
 - **OpenCode**: allow 30 minutes by default for streamed request uploads before response headers, and report exhausted internal connect timeouts as gateway errors instead of client-abort 499s
 - **Kiro**: share a current, consistently formatted IDE identity across inference, model catalog, usage, profile lookup, and API-key validation requests to prevent unsupported-client-version errors.

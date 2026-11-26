@@ -912,27 +912,27 @@ export default function ProxyPoolsPage() {
                 </div>
 
                 <div className="flex items-center justify-end gap-1">
-                  <Toggle
-                    size="sm"
-                    checked={pool.isActive === true}
-                    onChange={() => handleToggleActive(pool)}
-                    title={pool.isActive ? "Disable" : "Enable"}
-                  />
-                  {pool.type === "warp" && (
-                    <button
-                      onClick={handleHop}
-                      className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary"
-                      title="Rotate IP now"
-                      disabled={hopping}
-                    >
-                      <span
-                        className="material-symbols-outlined text-[18px]"
-                        style={hopping ? { animation: "spin 1s linear infinite" } : undefined}
-                      >
-                        {hopping ? "progress_activity" : "swap_horiz"}
-                      </span>
-                    </button>
-                  )}
+                                    {pool.type === "warp" && (
+                                      <button
+                                        onClick={handleHop}
+                                        className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary"
+                                        title="Rotate IP now"
+                                        disabled={hopping}
+                                      >
+                                        <span
+                                          className="material-symbols-outlined text-[18px]"
+                                          style={hopping ? { animation: "spin 1s linear infinite" } : undefined}
+                                        >
+                                          {hopping ? "progress_activity" : "swap_horiz"}
+                                        </span>
+                                      </button>
+                                    )}
+                                    <Toggle
+                                      size="sm"
+                                      checked={pool.isActive === true}
+                                      onChange={() => handleToggleActive(pool)}
+                                      title={pool.isActive ? "Disable" : "Enable"}
+                                    />
                   <button
                     onClick={() => handleTest(pool.id)}
                     className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary"

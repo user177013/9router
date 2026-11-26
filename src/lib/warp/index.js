@@ -34,7 +34,7 @@ function binName(name) {
 }
 
 // Binary locations: env override first, then <DATA_DIR>/warp/bin (what
-// scripts/warp-setup.sh downloads into).
+// scripts/warp-setup.mjs downloads into).
 function findBin(name) {
   const override = String(process.env[`WARP_${name.toUpperCase()}_PATH`] || "").trim();
   if (override && fs.existsSync(override)) return override;
@@ -47,7 +47,7 @@ function ensureRuntime() {
   const wireproxy = findBin("wireproxy");
   if (!wgcf || !wireproxy) {
     throw new Error(
-      `wgcf/wireproxy binaries not found in ${binDir} — run scripts/warp-setup.sh once (or set WARP_WGCF_PATH / WARP_WIREPROXY_PATH)`
+      `wgcf/wireproxy binaries not found in ${binDir} — run node scripts/warp-setup.mjs once (or set WARP_WGCF_PATH / WARP_WIREPROXY_PATH)`
     );
   }
   return { wgcf, wireproxy };

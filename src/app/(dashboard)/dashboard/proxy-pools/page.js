@@ -1299,7 +1299,7 @@ export default function ProxyPoolsPage() {
                 value={String(formData.maxHops)}
                 onChange={(e) => setFormData((prev) => ({ ...prev, maxHops: e.target.value }))}
                 placeholder="3"
-                hint="How many identity rotations a single request may use. Needs scripts/warp-setup.sh on the host."
+                hint="How many identity rotations a request may use. Before first use, run 9router warp setup on the 9Router host (from any directory), or npx 9router warp setup."
               />
             </>
           )}

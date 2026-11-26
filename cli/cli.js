@@ -90,6 +90,21 @@ if (args[0] === "xai" && args[1] === "video") {
   return;
 }
 
+if (args[0] === "warp") {
+  if (args[1] !== "setup") {
+    console.error("Usage: 9router warp setup");
+    process.exit(1);
+  }
+  const { run } = require("./src/cli/commands/warpSetup");
+  run(args.slice(2))
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      console.error(`❌ ${err?.message || err}`);
+      process.exit(1);
+    });
+  return;
+}
+
 // `9router connect <url>` configures local CLI tools against a remote server, and
 // `9router show` prints what they're currently set to — no local server, no
 // runtime deps. Usable via `npx 9router …`.
@@ -189,6 +204,7 @@ Commands:
   xai video --prompt "..." --output video.mp4
                       Generate a Grok Imagine video via the running gateway
                       (see: ${APP_NAME} xai video --help)
+  warp setup          Install WARP helper binaries for this machine
 `);
     process.exit(0);
   } else if (args[i] === "--version" || args[i] === "-v") {

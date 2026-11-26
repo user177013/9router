@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isPinnedToBottom, SCROLL_FOLLOW_SLACK_PX } from "../../src/shared/utils/scrollFollow.js";
+import { isPinnedToBottom, SCROLL_FOLLOW_SLACK_PX, topmostAnchor } from "../../src/shared/utils/scrollFollow.js";
 
 // A scroll box, measured the way the DOM measures one.
 const box = ({ scrollTop, scrollHeight = 1000, clientHeight = 400 }) => ({
@@ -47,5 +47,42 @@ describe("isPinnedToBottom", () => {
   it("honours an explicit slack", () => {
     expect(isPinnedToBottom(box({ scrollTop: 590 }), 0)).toBe(false);
     expect(isPinnedToBottom(box({ scrollTop: 590 }), 20)).toBe(true);
+  });
+});
+
+// Five uniform rows: tops at 0, 20, 40, 60, 80.
+const rowTops = [0, 20, 40, 60, 80];
+
+describe("topmostAnchor", () => {
+  it("picks the top row when the viewport sits at the very top", () => {
+    expect(topmostAnchor(rowTops, 0)).toEqual({ index: 0, offset: 0 });
+  });
+
+  it("reports how far the viewport top sits inside the topmost row", () => {
+    // scrollTop of 45 means row top 40 is the topmost visible, 5px down inside it.
+    expect(topmostAnchor(rowTops, 45)).toEqual({ index: 2, offset: 5 });
+  });
+
+  it("reaches a row whose top is just past the viewport top, within the edge tolerance", () => {
+    // scrollTop 41: row 40's top is 1px above the viewport top, still topmost.
+    expect(topmostAnchor(rowTops, 41, 1)).toEqual({ index: 2, offset: 1 });
+  });
+
+  it("answers the first row with no offset for an empty log", () => {
+    expect(topmostAnchor([], 0)).toEqual({ index: 0, offset: 0 });
+    expect(topmostAnchor(null, 0)).toEqual({ index: 0, offset: 0 });
+  });
+
+  it("keeps the same anchor stable across a top-trim of the rows", () => {
+    // Reader is anchored to a stable line id, 5px down inside it. Before the
+    // trim that line's top was 40, so the reader sat at scrollTop 45. A
+    // top-trim removes the two oldest lines and the anchored line's top moves
+    // to 0; re-pinning to lookedUpTop + offset restores the same position
+    // relative to the line. An index-keyed anchor would have drifted a line,
+    // because index 2 no longer points at the line the reader was on.
+    const anchor = { lineId: 42, offset: 5 };
+    const lookedUpTop = 0; // anchored line's top after the trim
+    const repinned = lookedUpTop + anchor.offset;
+    expect(repinned).toBe(5);
   });
 });

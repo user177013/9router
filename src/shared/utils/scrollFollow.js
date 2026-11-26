@@ -36,3 +36,33 @@ export function isPinnedToBottom(el, slack = SCROLL_FOLLOW_SLACK_PX) {
   }
   return scrollHeight - scrollTop - clientHeight <= slack;
 }
+
+/**
+ * Which line is the topmost one the viewport is resting on, and how far down
+ * inside that line the viewport top sits.
+ *
+ * `offsetTops` are each line's top in content coordinates (ascending); reading
+ * them back against the container means they are independent of the current
+ * `scrollTop`, so the result is stable across re-renders and top-trims.
+ *
+ * Returns the topmost line's positional `index` and `offset`, where offset is
+ * how far the viewport top sits *below* the top of that line (its above-viewport
+ * gap, 0 when the line is flush with the top). The caller stores the anchored
+ * line's stable id plus `offset`, re-looks-up that id after the next update,
+ * and re-pins `scrollTop` to `offsetTops[indexById] + offset` so the same line
+ * stays exactly where the reader left it (#3838 follow-up: top-trims used to
+ * drag the reader down a line at a time).
+ *
+ * An empty list answers the first line with no offset: nothing is anchored, so
+ * the caller has nothing to restore and the viewport stays put.
+ */
+export function topmostAnchor(offsetTops, scrollTop, edgeTolerancePx = 1) {
+  if (!Array.isArray(offsetTops) || offsetTops.length === 0) {
+    return { index: 0, offset: 0 };
+  }
+  let index = 0;
+  for (let i = 0; i < offsetTops.length; i++) {
+    if (offsetTops[i] <= scrollTop + edgeTolerancePx) index = i;
+  }
+  return { index, offset: scrollTop - offsetTops[index] };
+}

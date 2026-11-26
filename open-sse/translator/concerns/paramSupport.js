@@ -12,8 +12,11 @@ const STRIP_RULES = [
   { provider: "github", match: /gpt-5\.4/i, drop: ["temperature"] },
   // GitHub Copilot Claude (except opus/sonnet 4.6): thinking + reasoning_effort rejected. #713
   { provider: "github", match: (m) => /claude/i.test(m) && !/claude.*(opus|sonnet).*4\.6/i.test(m), drop: ["thinking", "reasoning_effort"] },
-  // Cloudflare Workers AI: content must be plain string, rejects OpenAI content-part array (#1926)
-  { provider: "cloudflare-ai", flattenContent: true },
+  // Cloudflare Workers AI: text-only models only accept string content (#1926).
+  // Vision models accept content-part arrays with image_url. Root-level `image`/`images`
+  // fields (non-standard OpenAI, sent by some clients) are rejected by the chat endpoint
+  // schema — strip them to avoid 400 "Type mismatch of '/image', 'string' not in 'array','binary'".
+  { provider: "cloudflare-ai", flattenContent: true, drop: ["image", "images"] },
   { provider: "volcengine-ark", match: /glm-5/i, clampToModelMaxOutput: true },
   // VolcEngine Ark caps the Kimi family at max_tokens <= 32768, but the model's
   // advertised ceiling is far higher (Kimi-K2.7-Code resolves to maxOutput 262144),

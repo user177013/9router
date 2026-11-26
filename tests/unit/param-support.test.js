@@ -54,6 +54,20 @@ describe("stripUnsupportedParams", () => {
     expect(body.messages[1].content[1].type).toBe("image_url");
   });
 
+  it("strips root-level image and images fields for Cloudflare AI chat requests", () => {
+    const body = {
+      messages: [{ role: "user", content: "hi" }],
+      image: "data:image/png;base64,xx",
+      images: ["data:image/png;base64,yy"],
+    };
+
+    stripUnsupportedParams("cloudflare-ai", "@cf/moonshotai/kimi-k2.6", body);
+
+    expect(body.image).toBeUndefined();
+    expect(body.images).toBeUndefined();
+    expect(body.messages[0].content).toBe("hi");
+  });
+
   it("still drops unsupported GitHub model params", () => {
     const body = { temperature: 0.7, top_p: 1 };
 

@@ -132,7 +132,8 @@ const APP_NAME = pkg.name; // Use from package.json
 const INSTALL_CMD_LATEST = `npm i -g ${APP_NAME}@latest --prefer-online`;
 
 const DEFAULT_PORT = 20128;
-const DEFAULT_HOST = "0.0.0.0";
+// Default to loopback: hosting must be opted in via --host 0.0.0.0.
+const DEFAULT_HOST = "127.0.0.1";
 
 // First non-internal IPv4 — the address remote peers actually reach when bound to 0.0.0.0.
 function getLanIp() {
@@ -144,9 +145,14 @@ function getLanIp() {
   return null;
 }
 
-// Local URL stays "localhost"; warn separately when bound to all interfaces (network-exposed).
+// Local URL stays "localhost" for loopback; display the raw host otherwise.
 function getDisplayHost() {
   return host === DEFAULT_HOST ? "localhost" : host;
+}
+
+// True when the bind address restricts the server to this machine.
+function isLoopbackHost(h) {
+  return h === "localhost" || h === "::1" || /^127\.\d+\.\d+\.\d+$/.test(h);
 }
 const MAX_PORT_ATTEMPTS = 10;
 // Upper bounds for waiting on killed processes / a released port. Both waits
@@ -188,7 +194,8 @@ Usage: ${APP_NAME} [options]
 
 Options:
   -p, --port <port>   Port to run the server (default: ${DEFAULT_PORT})
-  -H, --host <host>   Host to bind (default: ${DEFAULT_HOST})
+  -H, --host <host>   Host to bind (default: ${DEFAULT_HOST}, loopback only).
+                      Use --host 0.0.0.0 to expose on the network.
   -n, --no-browser    Don't open browser automatically
   -l, --log           Show server logs (default: hidden)
   -t, --tray          Run in system tray mode (background)
@@ -664,10 +671,10 @@ function startServer(updatePromise) {
   const latestVersionPromise = Promise.resolve(updatePromise);
   const displayHost = getDisplayHost();
   const url = `http://${displayHost}:${port}/dashboard`;
-  // Surface real network exposure when bound to all interfaces (default 0.0.0.0).
-  if (host === DEFAULT_HOST) {
+  // Warn when the user explicitly opts into a network-exposed bind.
+  if (!isLoopbackHost(host)) {
     const lanIp = getLanIp();
-    if (lanIp) console.log(`\x1b[33m⚠ Network-exposed: reachable at http://${lanIp}:${port} (bound 0.0.0.0). Use --host 127.0.0.1 for local-only.\x1b[0m`);
+    if (lanIp) console.log(`\x1b[33m⚠ Network-exposed: reachable at http://${lanIp}:${port} (bound ${host}). Use --host 127.0.0.1 for local-only.\x1b[0m`);
   }
 
   let restartCount = 0;

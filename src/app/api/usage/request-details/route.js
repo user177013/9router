@@ -48,22 +48,26 @@ export async function GET(request) {
     
     const result = await getRequestDetails(filter);
 
-    // Redact conversation payloads: the stored details include full request
-    // bodies (user prompts, tool calls) and provider responses. Returning them
-    // wholesale lets any dashboard-authenticated user (or, if requireLogin is
-    // disabled, anyone) read every user's conversation history. Keep the
-    // metadata (model, tokens, latency, status) but drop message content.
-    const redactedDetails = (result.details || []).map((d) => {
-      const redacted = { ...d };
-      for (const key of ["request", "providerRequest", "providerResponse", "response"]) {
-        if (redacted[key] !== undefined) {
-          redacted[key] = { redacted: true };
-        }
-      }
-      return redacted;
-    });
+    // Full payload visibility is the default (debugging-friendly). Set
+    // REDACT_REQUEST_PAYLOADS=true to re-enable the v0.5.59 hard redaction
+    // that replaced request/providerRequest/providerResponse/response with
+    // { redacted: true } before returning to the dashboard.
+    const shouldRedact = process.env.REDACT_REQUEST_PAYLOADS === "true";
 
-    return NextResponse.json({ ...result, details: redactedDetails });
+    let details = result.details || [];
+    if (shouldRedact) {
+      details = details.map((d) => {
+        const redacted = { ...d };
+        for (const key of ["request", "providerRequest", "providerResponse", "response"]) {
+          if (redacted[key] !== undefined) {
+            redacted[key] = { redacted: true };
+          }
+        }
+        return redacted;
+      });
+    }
+
+    return NextResponse.json({ ...result, details });
   } catch (error) {
     console.error("[API] Failed to get request details:", error);
     return NextResponse.json(

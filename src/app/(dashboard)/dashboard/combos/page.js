@@ -1107,7 +1107,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
   );
 }
 
-function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({ id, index, model, count = 1, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -1169,7 +1169,12 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
           onClick={() => setEditing(true)}
           title="Click to edit"
         >
-          {model}
+          <span className="inline-flex items-center gap-1">
+            {model}
+            {count > 1 && (
+              <span className="text-[9px] font-bold px-1 rounded bg-primary/15 text-primary" title="This model appears multiple times in the combo">×{count}</span>
+            )}
+          </span>
         </div>
       )}
 
@@ -1222,6 +1227,12 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   // Use stable index-based IDs so duplicates and similar names are handled correctly
   const modelItems = models.map((model, i) => ({ uid: `item-${i}`, model }));
 
+  // Per-value occurrence counts so duplicate seats can render a ×N badge.
+  const modelCounts = models.reduce((acc, v) => {
+    acc[v] = (acc[v] || 0) + 1;
+    return acc;
+  }, {});
+
   const handleDragEnd = (event) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
@@ -1269,13 +1280,15 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   };
 
   const handleAddModel = (model) => {
-    if (!models.includes(model.value)) {
-      setModels([...models, model.value]);
-    }
+    setModels([...models, model.value]);
   };
 
   const handleDeselectModel = (model) => {
-    setModels(models.filter((m) => m !== model.value));
+    const idx = models.indexOf(model.value);
+    if (idx === -1) return;
+    const a = [...models];
+    a.splice(idx, 1);
+    setModels(a);
   };
 
   const handleRemoveModel = (index) => {
@@ -1346,6 +1359,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
                       id={uid}
                       index={index}
                       model={model}
+                      count={modelCounts[model] || 1}
                       isFirst={index === 0}
                       isLast={index === modelItems.length - 1}
                       onEdit={(newVal) => {
@@ -1403,6 +1417,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
           kindFilter={kindFilter}
           addedModelValues={models}
           closeOnSelect={false}
+          allowDuplicates
         />
       )}
     </>

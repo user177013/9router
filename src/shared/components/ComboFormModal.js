@@ -9,7 +9,7 @@ import ModelSelectModal from "./ModelSelectModal";
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
 // Inline editable model item
-function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({ index, model, count = 1, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(model);
   const commit = () => {
@@ -30,7 +30,14 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
           className="min-w-0 flex-1 rounded border border-primary/40 bg-white px-1.5 py-0.5 font-mono text-xs text-text-main outline-none dark:bg-black/20" />
       ) : (
         <div className="min-w-0 flex-1 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs text-text-main hover:bg-black/5 dark:hover:bg-white/5"
-          onClick={() => setEditing(true)} title="Click to edit">{model}</div>
+          onClick={() => setEditing(true)} title="Click to edit">
+          <span className="inline-flex items-center gap-1">
+            {model}
+            {count > 1 && (
+              <span className="text-[9px] font-bold px-1 rounded bg-primary/15 text-primary" title="This model appears multiple times in the combo">×{count}</span>
+            )}
+          </span>
+        </div>
       )}
       <div className="flex shrink-0 items-center gap-0.5">
         <button onClick={onMoveUp} disabled={isFirst}
@@ -62,6 +69,12 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
 
+  // Per-value occurrence counts so duplicate seats render a ×N badge.
+  const modelCounts = models.reduce((acc, v) => {
+    acc[v] = (acc[v] || 0) + 1;
+    return acc;
+  }, {});
+
   useEffect(() => {
     if (!isOpen) return;
     fetch("/api/models/alias").then((r) => r.ok ? r.json() : null).then((d) => d && setModelAliases(d.aliases || {})).catch(() => {});
@@ -84,10 +97,14 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
   };
 
   const handleAddModel = (model) => {
-    if (!models.includes(model.value)) setModels([...models, model.value]);
+    setModels([...models, model.value]);
   };
   const handleDeselectModel = (model) => {
-    setModels(models.filter((m) => m !== model.value));
+    const idx = models.indexOf(model.value);
+    if (idx === -1) return;
+    const a = [...models];
+    a.splice(idx, 1);
+    setModels(a);
   };
   const handleRemoveModel = (i) => setModels(models.filter((_, idx) => idx !== i));
   const handleMoveUp = (i) => {
@@ -141,7 +158,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
             ) : (
               <div className="flex max-h-[55vh] min-w-0 flex-col gap-1 overflow-y-auto sm:max-h-[350px]">
                 {models.map((model, index) => (
-                  <ModelItem key={index} index={index} model={model}
+                  <ModelItem key={index} index={index} model={model} count={modelCounts[model] || 1}
                     isFirst={index === 0} isLast={index === models.length - 1}
                     onEdit={(v) => { const a = [...models]; a[index] = v; setModels(a); }}
                     onMoveUp={() => handleMoveUp(index)}
@@ -171,7 +188,12 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
           onSelect={handleAddModel} onDeselect={handleDeselectModel}
           onSelectBatch={(items) => {
             const vals = items.map((m) => m?.value || m?.name || m).filter(Boolean);
-            setModels((prev) => [...new Set([...prev, ...vals])]);
+            setModels((prev) => {
+              const seen = new Set(prev);
+              // "Select all visible" adds every unadded model once, preserving
+              // duplicates the user placed deliberately (best-of-N / zigzag).
+              return [...prev, ...vals.filter((v) => !seen.has(v))];
+            });
           }}
           onDeselectBatch={(items) => {
             const vals = new Set(items.map((m) => m?.value || m?.name || m).filter(Boolean));
@@ -179,7 +201,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
           }}
           activeProviders={activeProviders} modelAliases={modelAliases}
           title="Add Model to Combo" kindFilter={kindFilter}
-          addedModelValues={models} closeOnSelect={false} />
+          addedModelValues={models} closeOnSelect={false} allowDuplicates />
       )}
     </>
   );

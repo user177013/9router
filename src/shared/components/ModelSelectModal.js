@@ -87,6 +87,7 @@ export default function ModelSelectModal({
   addedModelValues = [],
   closeOnSelect = true,
   allowProviderWildcard = false,
+  allowDuplicates = false,
 }) {
   // Live-fetched connections on modal open, fallback to activeProviders prop
   const [fetchedConnections, setFetchedConnections] = useState(null);
@@ -594,6 +595,15 @@ export default function ModelSelectModal({
     return visibleModels.filter((m) => addedModelValues.includes(m.value));
   }, [visibleModels, addedModelValues]);
 
+  // Per-value occurrence counts so duplicate seats can render a ×N badge
+  const valueCounts = useMemo(() => {
+    const counts = {};
+    for (const v of addedModelValues) {
+      counts[v] = (counts[v] || 0) + 1;
+    }
+    return counts;
+  }, [addedModelValues]);
+
   const handleSelectAllVisible = () => {
     if (visibleUnadded.length === 0) return;
     if (onSelectBatch) {
@@ -616,7 +626,9 @@ export default function ModelSelectModal({
     const value = model?.value || model?.name || model;
     const isAdded = addedModelValues.includes(value);
 
-    if (isAdded && onDeselect) {
+    // When duplicates are allowed, re-clicking an added model adds another seat
+    // instead of toggling it off (the caller removes specific seats by index).
+    if (!allowDuplicates && isAdded && onDeselect) {
       onDeselect(model);
     } else {
       onSelect(model);
@@ -646,7 +658,9 @@ export default function ModelSelectModal({
         <span>
           {allowProviderWildcard
             ? "Click to add/remove a model, or click a provider name for wildcard (e.g. provider/*). Search supports exclusions (e.g. claude -haiku) and RegEx (/pattern/)."
-            : "Click to add, click again to remove. Search supports exclusions (e.g. claude -haiku) and RegEx (/pattern/)."}
+            : allowDuplicates
+              ? "Click to add. Clicking an added model again adds another seat (duplicates are allowed — used for best-of-N / zigzag fallback). Search supports exclusions (e.g. claude -haiku) and RegEx (/pattern/)."
+              : "Click to add, click again to remove. Search supports exclusions (e.g. claude -haiku) and RegEx (/pattern/)."}
         </span>
       </div>
 
@@ -833,6 +847,11 @@ export default function ModelSelectModal({
                       {addedModelValues.includes(model.value) && !isPlaceholder && (
                         <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
                       )}
+                      {allowDuplicates && (valueCounts[model.value] || 0) > 1 && !isPlaceholder && (
+                        <span className="text-[9px] font-bold px-1 rounded bg-white/20 text-white" title="Added multiple times">
+                          ×{valueCounts[model.value]}
+                        </span>
+                      )}
                       {isPlaceholder ? (
                         <>
                           <span className="material-symbols-outlined text-[11px]">edit</span>
@@ -892,4 +911,5 @@ ModelSelectModal.propTypes = {
   addedModelValues: PropTypes.arrayOf(PropTypes.string),
   closeOnSelect: PropTypes.bool,
   allowProviderWildcard: PropTypes.bool,
+  allowDuplicates: PropTypes.bool,
 };

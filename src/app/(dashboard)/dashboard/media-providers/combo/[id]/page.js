@@ -120,7 +120,7 @@ export default function ComboDetailPage() {
 
   const handleAddModel = async (model) => {
     const value = model?.value || model;
-    if (!value || providers.includes(value)) return;
+    if (!value) return;
     const next = [...providers, value];
     setProviders(next);
     await saveCombo({ models: next });
@@ -129,7 +129,9 @@ export default function ComboDetailPage() {
   const handleDeselectModel = async (model) => {
     const value = model?.value || model;
     if (!value || !providers.includes(value)) return;
-    const next = providers.filter((p) => p !== value);
+    const idx = providers.indexOf(value);
+    const next = [...providers];
+    next.splice(idx, 1);
     setProviders(next);
     await saveCombo({ models: next });
   };
@@ -296,6 +298,7 @@ export default function ComboDetailPage() {
             {providers.map((entry, idx) => {
               const { providerId, model } = parseModelEntry(entry);
               const p = AI_PROVIDERS[providerId];
+              const dupCount = providers.filter((e) => e === entry).length;
               return (
                 <div key={`${entry}-${idx}`} className="flex items-center gap-3 p-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02]">
                   <span className="text-xs text-text-muted w-5 text-center">{idx + 1}</span>
@@ -308,7 +311,12 @@ export default function ComboDetailPage() {
                     fallbackColor={p?.color}
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate">{p?.name || providerId}</div>
+                    <div className="text-sm font-medium truncate">
+                      {p?.name || providerId}
+                      {dupCount > 1 && (
+                        <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-primary/15 text-primary" title="This provider is duplicated in the combo">×{dupCount}</span>
+                      )}
+                    </div>
                     {model && <code className="text-[10px] text-text-muted font-mono truncate block">{model}</code>}
                   </div>
                   <div className="flex items-center gap-0.5">
@@ -405,6 +413,7 @@ export default function ComboDetailPage() {
           kindFilter={combo.kind}
           addedModelValues={providers}
           closeOnSelect={false}
+          allowDuplicates
         />
       )}
     </div>

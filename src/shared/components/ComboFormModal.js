@@ -9,7 +9,7 @@ import ModelSelectModal from "./ModelSelectModal";
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
 // Inline editable model item
-function ModelItem({ index, model, count = 1, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(model);
   const commit = () => {
@@ -33,9 +33,6 @@ function ModelItem({ index, model, count = 1, isFirst, isLast, onEdit, onMoveUp,
           onClick={() => setEditing(true)} title="Click to edit">
           <span className="inline-flex items-center gap-1">
             {model}
-            {count > 1 && (
-              <span className="text-[9px] font-bold px-1 rounded bg-primary/15 text-primary" title="This model appears multiple times in the combo">×{count}</span>
-            )}
           </span>
         </div>
       )}
@@ -68,12 +65,6 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
-
-  // Per-value occurrence counts so duplicate seats render a ×N badge.
-  const modelCounts = models.reduce((acc, v) => {
-    acc[v] = (acc[v] || 0) + 1;
-    return acc;
-  }, {});
 
   useEffect(() => {
     if (!isOpen) return;
@@ -158,7 +149,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
             ) : (
               <div className="flex max-h-[55vh] min-w-0 flex-col gap-1 overflow-y-auto sm:max-h-[350px]">
                 {models.map((model, index) => (
-                  <ModelItem key={index} index={index} model={model} count={modelCounts[model] || 1}
+                  <ModelItem key={index} index={index} model={model}
                     isFirst={index === 0} isLast={index === models.length - 1}
                     onEdit={(v) => { const a = [...models]; a[index] = v; setModels(a); }}
                     onMoveUp={() => handleMoveUp(index)}

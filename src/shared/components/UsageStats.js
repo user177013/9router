@@ -222,6 +222,35 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const period = periodProp ?? periodLocal;
   const setPeriod = setPeriodProp ?? setPeriodLocal;
 
+  // Track the current period in a ref so the SSE handler can trigger
+  // a debounced REST refetch with the correct period filter
+  const periodRef = useRef(period);
+  const refetchTimer = useRef(null);
+
+  useEffect(() => {
+    periodRef.current = period;
+  }, [period]);
+
+  const refetchStats = useCallback(() => {
+    setFetching(true);
+    fetch(`/api/usage/stats?period=${periodRef.current}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data) {
+          hasLoadedStats.current = true;
+          setStats((prev) => ({ ...prev, ...data }));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setFetching(false));
+  }, []);
+
+  // Debounce so rapid SSE events don't cause a storm of REST calls
+  const scheduleRefetch = useCallback(() => {
+    if (refetchTimer.current) clearTimeout(refetchTimer.current);
+    refetchTimer.current = setTimeout(refetchStats, 3000);
+  }, [refetchStats]);
+
   // Fetch connected providers once, deduplicate by provider type
   // Always include noAuth free providers (e.g. opencode) regardless of connections
   useEffect(() => {
@@ -287,7 +316,9 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        // Always merge only real-time fields, never overwrite full stats from REST
+        // Merge real-time fields; table data (byModel, byAccount, lastUsed, etc.)
+        // is period-filtered via REST and not included in the SSE payload, so
+        // schedule a debounced refetch to keep the table fresh
         setStats((prev) => {
           if (!prev) return prev;
           return {
@@ -299,6 +330,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           };
         });
         if (hasLoadedStats.current) setLoading(false);
+        scheduleRefetch();
       } catch (err) {
         console.error("[SSE CLIENT] parse error:", err);
       }
@@ -306,8 +338,11 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
     es.onerror = () => setLoading(false);
 
-    return () => es.close();
-  }, []);
+    return () => {
+      es.close();
+      if (refetchTimer.current) clearTimeout(refetchTimer.current);
+    };
+  }, [scheduleRefetch]);
 
   const toggleSort = useCallback((tableType, field) => {
     const params = new URLSearchParams(searchParams.toString());

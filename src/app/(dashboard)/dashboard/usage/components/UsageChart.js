@@ -115,7 +115,12 @@ export default function UsageChart({ period = "7d" }) {
                 border: "1px solid var(--color-border)",
                 borderRadius: "8px",
                 fontSize: "12px",
+                color: "var(--color-text-main)",
               }}
+              // Recharts v3 bakes color:#000 into each tooltip item line;
+              // without this override the number is black on dark theme.
+              itemStyle={{ color: "var(--color-text-main)" }}
+              labelStyle={{ color: "var(--color-text-main)" }}
               formatter={(value) => [cfg.formatter(value), cfg.label]}
             />
             <Area

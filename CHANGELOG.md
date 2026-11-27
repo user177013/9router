@@ -2,14 +2,18 @@
  
 ## Features
 - **Fusion**: add per-combo tuning controls and a judge directive for more configurable fusion responses.
+- **Providers**: sync compatible provider models from `/models`, and add a bulk Disable Selected action while preserving per-key model curation when a provider is re-enabled.
+- **Usage**: add a unified per-provider Totals view and refresh usage tables automatically when SSE events arrive.
+- **Combos**: support duplicate model entries in combos while keeping the panel display concise.
 - **WARP**: add npm CLI setup support for configuring WARP.
 - **WARP**: auto-download the `wgcf` + `wireproxy` helper binaries on first use of a WARP proxy pool across Windows/macOS/Linux — a pure-JS `zlib`+ustar extractor (no `tar` binary) lands in the data dir, single-flight to avoid concurrent downloads, with a fail-closed error that still points at the manual `9router warp setup` for offline hosts or unsupported platforms. Versions are pinned (not `latest`), and every download is SHA-256-verified against the release's published `checksums.txt` before it is written — a mismatch or missing checksum entry refuses to install.
 - **Security**: the gateway now binds to loopback (`127.0.0.1`) by default; reach it on the network only by opting in with `--host 0.0.0.0` (the CLI prints a LAN-exposure warning when you do). Docker/cloud hosting is unchanged because it sets `HOSTNAME=0.0.0.0` explicitly.
 - **Usage**: `/api/usage/request-details` returns full request/response payloads by default for live debugging. Set `REDACT_REQUEST_PAYLOADS=true` to restore the v0.5.59 redaction (payload fields replaced with `{ redacted: true }`).
  
 ## Fixes
-- **Cloudflare AI**: strip root-level `image`/`images` fields from chat bodies to avoid sending unsupported parameters upstream.
+- **Cloudflare AI**: move root-level `image`/`images` fields into `image_url` content parts, preserving vision input without sending unsupported root-level parameters upstream.
 - **Chat responses**: backfill missing upstream `model` fields with the actual routed model for single-route requests, and return actual-run `{ role, model }` provenance arrays for fusion combos (`judge` plus only successful `panel` entries).
+- **Dashboard**: keep the console log viewport anchored to a stable line and improve usage-chart tooltip contrast in dark themes.
 - **OpenCode**: allow 30 minutes by default for streamed request uploads before response headers, and report exhausted internal connect timeouts as gateway errors instead of client-abort 499s
 - **Kiro**: share a current, consistently formatted IDE identity across inference, model catalog, usage, profile lookup, and API-key validation requests to prevent unsupported-client-version errors.
 - **Transport**: negotiate TLS curves by default instead of forcing X25519, fixing AWS OIDC connection resets while retaining the explicit curve override and existing certificate-verification policy.

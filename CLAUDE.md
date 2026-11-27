@@ -90,3 +90,4 @@ Pre-translate hooks that compress `tool_result` content in-place to cut tokens. 
 - Binary/protobuf upstreams (kiro EventStream, cursor protobuf, commandcode NDJSON) don't round-trip through OpenAI — they're handled inside their own executor, not the translator.
 - **Security-first on PRs**: Security is the top priority when reviewing or creating PRs. Audit authentication, credential/token storage & leaks, header manipulation (`X-Forwarded-For`), and SSRF risks before functional logic. Always include explicit security warnings/notes when reporting PR reviews or changes to the user.
 - Versioning: root and `cli/` are versioned independently; changes are logged in `CHANGELOG.md`. On the `nightly` branch, keep the base version aligned with upstream `main` and append `-nightly-DDMMYY` (for example, `0.5.119-nightly-010626`). Commit style is Conventional Commits (`fix(translator): …`, `feat(...)`).
+- Before building, update changelog with new changes.

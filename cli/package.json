@@ -1,6 +1,6 @@
 {
   "name": "9router-nightly",
-  "version": "0.5.123-nightly-261126",
+  "version": "0.5.123-nightly-281126",
   "description": "9Router CLI - Start and manage 9Router server",
   "bin": {
     "9router-nightly": "./cli.js"

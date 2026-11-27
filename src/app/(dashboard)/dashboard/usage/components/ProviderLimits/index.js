@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
+import ProviderTotals from "./ProviderTotals";
 import Toggle from "@/shared/components/Toggle";
 import Tooltip from "@/shared/components/Tooltip";
 import {
@@ -20,6 +21,7 @@ import {
   getConnectionsEmptyMessage,
   getPageSizeLabel,
   getConnectionsPaginationSummary,
+  aggregateProviderTotals,
   getSafePagination,
   getSafeTotals,
   shouldResetPage,
@@ -30,6 +32,7 @@ import {
   setQuotaCache,
   QUOTA_CACHE_KEY,
   REFRESH_INTERVAL_MS,
+  TOTALS_REFRESH_INTERVAL_MS,
   CLAUDE_REFRESH_INTERVAL_MS,
   DEPLETED_QUOTA_THRESHOLD,
   AUTO_REFRESH_STORAGE_KEY,
@@ -204,6 +207,16 @@ export default function ProviderLimits() {
   const [quotaVisibility, setQuotaVisibility] = useState({});
   const [expiringFirst, setExpiringFirst] = useState(false);
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
+  // "accounts" lists each connection; "totals" collapses same-provider accounts
+  // into one summed bar per provider so multi-account users skip the mental
+  // math (#4639). Session-only: resets to the default on reload.
+  const [viewMode, setViewMode] = useState("accounts");
+  // Totals mode pools every account, not just the current page, so it keeps a
+  // separate full connection list fetched with the API's max page size.
+  const [allConnections, setAllConnections] = useState([]);
+  const [allConnectionsLoading, setAllConnectionsLoading] = useState(false);
+  const [allQuotaData, setAllQuotaData] = useState({});
+  const [allQuotaLoading, setAllQuotaLoading] = useState(false);
   const [bulkToggling, setBulkToggling] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(CONNECTIONS_PAGE_SIZE);
@@ -224,6 +237,9 @@ export default function ProviderLimits() {
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
   const tickCountRef = useRef(0);
+  // Re-entrancy guard: a full-pool sweep can outlast a refresh tick; without
+  // this the next tick would stack a second sweep on top of the first.
+  const totalsSweepingRef = useRef(false);
 
   const fetchConnections = useCallback(
     async (targetPage = page) => {
@@ -344,6 +360,94 @@ export default function ProviderLimits() {
       setLoading((prev) => ({ ...prev, [connectionId]: false }));
     }
   }, []);
+
+  // Fetch and parse a single connection's quota without touching the per-page
+  // state. Returns the entry, `null` when the connection is gone/404, and throws
+  // on real errors. Shared by the all-accounts totals pool so it can aggregate
+  // every page, not just the current one (#4639).
+  const loadQuotaEntry = useCallback(async (connectionId, provider, { force = false } = {}) => {
+    const url = `/api/usage/${connectionId}${force ? "?force=1" : ""}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error || response.statusText;
+      if (response.status === 404) return null;
+      if (response.status === 401) return { quotas: [], message: errorMsg };
+      throw new Error(`HTTP ${response.status}: ${errorMsg}`);
+    }
+
+    const data = await response.json();
+    return {
+      quotas: parseQuotaData(provider, data),
+      plan: data.plan || null,
+      message: data.message || null,
+      raw: data,
+    };
+  }, []);
+
+  // Pull every page of connections (respecting the active filters) and their
+  // quota into a pool used only by the Totals view. The API caps pageSize at
+  // 500, so we walk pages 2..totalPages after the first response.
+  const refreshTotalsPool = useCallback(async () => {
+    // Skip if a sweep is already running so a slow pass can't stack a second
+    // sweep on top of the first when the refresh interval fires mid-sweep.
+    if (totalsSweepingRef.current) return;
+    totalsSweepingRef.current = true;
+    setAllConnectionsLoading(true);
+    try {
+      const collectPage = async (page) => {
+        const params = new URLSearchParams({
+          page: String(page),
+          pageSize: String(ACCOUNT_PAGE_SIZE_MAX),
+          accountStatus: accountFilter,
+          sort: "priority",
+        });
+        if (providerFilter !== "all") params.set("provider", providerFilter);
+        const response = await fetch(`/api/providers/client?${params.toString()}`);
+        if (!response.ok) throw new Error("Failed to fetch connections");
+        return response.json();
+      };
+
+      const first = await collectPage(1);
+      const all = [...(first.connections || [])];
+      const totalPages = first.pagination?.totalPages || 1;
+      for (let p = 2; p <= totalPages; p += 1) {
+        const next = await collectPage(p);
+        all.push(...(next.connections || []));
+      }
+      setAllConnections(all);
+
+      // Cap in-flight quota fetches: an unbounded Promise.all over the whole
+      // pool would fire N simultaneous requests at every tick (95 now, but the
+      // pool can grow to hundreds), so we sweep in batches of 8 instead.
+      setAllQuotaLoading(true);
+      const CONCURRENCY = 8;
+      const entries = {};
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < all.length) {
+          const index = cursor;
+          cursor += 1;
+          const result = await loadQuotaEntry(all[index].id, all[index].provider);
+          if (result) {
+            entries[all[index].id] = result;
+            setQuotaCache(all[index].id, result);
+          }
+        }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(CONCURRENCY, all.length) }, worker),
+      );
+      setAllQuotaData(entries);
+    } catch (error) {
+      console.error("Error loading totals pool:", error);
+    } finally {
+      setAllConnectionsLoading(false);
+      setAllQuotaLoading(false);
+      totalsSweepingRef.current = false;
+    }
+  }, [accountFilter, providerFilter, loadQuotaEntry]);
 
   // Refresh quota for a specific provider
   const refreshProvider = useCallback(
@@ -733,15 +837,22 @@ export default function ProviderLimits() {
       return;
     }
 
-    // Main refresh interval
+    // Main refresh interval: refresh the current page in Accounts mode,
+    // or the full pool in Totals mode (#4639). The full-pool sweep is heavier,
+    // so Totals mode polls on a slower cadence to avoid a stampede of requests.
+    const isTotals = viewMode === "totals";
+    const cadenceMs = isTotals ? TOTALS_REFRESH_INTERVAL_MS : REFRESH_INTERVAL_MS;
+    const cadenceSeconds = Math.round(cadenceMs / 1000);
     intervalRef.current = setInterval(() => {
-      refreshAll();
-    }, REFRESH_INTERVAL_MS);
+      if (isTotals) refreshTotalsPool();
+      else refreshAll();
+    }, cadenceMs);
 
-    // Countdown interval
+    // Countdown interval (resets to the active cadence when it hits zero)
+    setCountdown(cadenceSeconds);
     countdownRef.current = setInterval(() => {
       setCountdown((prev) => {
-        if (prev <= 1) return 60;
+        if (prev <= 1) return cadenceSeconds;
         return prev - 1;
       });
     }, 1000);
@@ -750,7 +861,14 @@ export default function ProviderLimits() {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
-  }, [autoRefresh, refreshAll, hasHydratedAutoRefresh]);
+  }, [autoRefresh, refreshAll, hasHydratedAutoRefresh, viewMode, refreshTotalsPool]);
+
+  // Load the all-pages pool when entering Totals view, and again if the
+  // filters change while already in Totals view (#4639).
+  useEffect(() => {
+    if (viewMode !== "totals") return;
+    refreshTotalsPool();
+  }, [viewMode, refreshTotalsPool]);
 
   // Pause auto-refresh when tab is hidden (Page Visibility API)
   useEffect(() => {
@@ -765,10 +883,18 @@ export default function ProviderLimits() {
           countdownRef.current = null;
         }
       } else if (autoRefresh && hasHydratedAutoRefresh) {
-        // Resume auto-refresh when tab becomes visible
-        intervalRef.current = setInterval(() => refreshAll(), REFRESH_INTERVAL_MS);
+        // Resume auto-refresh when tab becomes visible (route by active view,
+        // and by the slower cadence in Totals mode so a full-pool sweep isn't
+        // fired every minute after the tab returns to the foreground).
+        const isTotals = viewMode === "totals";
+        const cadenceMs = isTotals ? TOTALS_REFRESH_INTERVAL_MS : REFRESH_INTERVAL_MS;
+        const cadenceSeconds = Math.round(cadenceMs / 1000);
+        intervalRef.current = setInterval(() => {
+          if (isTotals) refreshTotalsPool();
+          else refreshAll();
+        }, cadenceMs);
         countdownRef.current = setInterval(() => {
-          setCountdown((prev) => (prev <= 1 ? 60 : prev - 1));
+          setCountdown((prev) => (prev <= 1 ? cadenceSeconds : prev - 1));
         }, 1000);
       }
     };
@@ -777,7 +903,7 @@ export default function ProviderLimits() {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [autoRefresh, refreshAll, hasHydratedAutoRefresh]);
+  }, [autoRefresh, refreshAll, hasHydratedAutoRefresh, viewMode, refreshTotalsPool]);
 
   const sortedConnections = useMemo(
     () =>
@@ -789,6 +915,16 @@ export default function ProviderLimits() {
         quotaSortMode,
       ),
     [connections, quotaData, expiringFirst, providerFilter, quotaSortMode],
+  );
+
+  // Aggregated per-provider totals so multi-account users see one summed bar
+  // instead of adding up N accounts by hand (#4639). In Totals view we pool
+  // the full all-pages list; in Accounts view (fallback) the current page.
+  const poolConnections = viewMode === "totals" ? allConnections : connections;
+  const poolQuotaData = viewMode === "totals" ? allQuotaData : quotaData;
+  const providerTotals = useMemo(
+    () => aggregateProviderTotals(poolConnections, poolQuotaData, quotaVisibility),
+    [poolConnections, poolQuotaData, quotaVisibility],
   );
 
   // Connection is depleted when any quota entry hit the threshold
@@ -1040,6 +1176,37 @@ export default function ProviderLimits() {
             <span className="hidden sm:inline">Expiring first</span>
           </button>
 
+          {/* Segmented view: per-account list vs. unified per-provider totals */}
+          <div
+            className="flex h-8 shrink-0 items-center rounded-lg border border-black/10 bg-black/[0.02] p-0.5 dark:border-white/10 dark:bg-white/[0.03]"
+            role="group"
+            aria-label="Quota view mode"
+          >
+            {[
+              { value: "accounts", label: "Accounts", icon: "account_circle" },
+              { value: "totals", label: "Totals", icon: "data_usage" },
+            ].map((option) => {
+              const active = viewMode === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setViewMode(option.value)}
+                  aria-pressed={active}
+                  title={
+                    option.value === "totals"
+                      ? "Collapse accounts of each provider into one summed bar"
+                      : "Show every account separately"
+                  }
+                  className={`flex h-full items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors ${active ? "bg-surface text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary"}`}
+                >
+                  <span className="material-symbols-outlined text-[14px]">{option.icon}</span>
+                  <span className="hidden sm:inline">{option.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
           {/* Bulk: disable depleted */}
           <button
             type="button"
@@ -1093,13 +1260,16 @@ export default function ProviderLimits() {
           {/* Refresh all button */}
           <button
             type="button"
-            onClick={() => refreshAll(true)}
-            disabled={refreshingAll}
+            onClick={() => {
+              if (viewMode === "totals") refreshTotalsPool();
+              else refreshAll(true);
+            }}
+            disabled={viewMode === "totals" ? allConnectionsLoading || allQuotaLoading : refreshingAll}
             className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-black/10 px-2 text-xs text-text-primary transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5 disabled:opacity-50"
             title="Refresh all"
           >
             <span
-              className={`material-symbols-outlined text-[14px] ${refreshingAll ? "animate-spin" : ""}`}
+              className={`material-symbols-outlined text-[14px] ${(viewMode === "totals" ? allConnectionsLoading || allQuotaLoading : refreshingAll) ? "animate-spin" : ""}`}
             >
               refresh
             </span>
@@ -1107,7 +1277,13 @@ export default function ProviderLimits() {
         </div>
       </div>
 
-      {/* Provider cards: 2 columns, compact */}
+      {viewMode === "totals" ? (
+        <ProviderTotals
+          totals={providerTotals}
+          loading={allConnectionsLoading || allQuotaLoading}
+        />
+      ) : (
+        <>
       {expiringFirst && (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
           Expiring-first currently reorders accounts inside the current page.
@@ -1415,6 +1591,8 @@ export default function ProviderLimits() {
           );
         })}
       </div>
+        </>
+      )}
 
       <div className="rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
           <div className="flex flex-wrap items-center justify-between gap-2">

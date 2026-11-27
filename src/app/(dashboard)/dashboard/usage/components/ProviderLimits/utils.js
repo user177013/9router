@@ -3,6 +3,9 @@ import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 // ─── Constants ───────────────────────────────────────────────────────────────
 export const QUOTA_CACHE_KEY = "quotaCacheData";
 export const REFRESH_INTERVAL_MS = 60000;
+// The Totals view sweeps every account (all pages), which is heavier than a
+// single page, so it polls on a slower cadence.
+export const TOTALS_REFRESH_INTERVAL_MS = 300000;
 // Claude usage/quota endpoint rate-limits; poll it less often than other providers
 export const CLAUDE_REFRESH_INTERVAL_MS = 600000;
 export const DEPLETED_QUOTA_THRESHOLD = 5;
@@ -351,6 +354,86 @@ export function getHiddenQuotaRows(provider, quotas = [], quotaVisibility = {}) 
   const hidden = getProviderHiddenQuotaSet(provider, quotaVisibility, quotas);
   if (hidden.size === 0) return [];
   return quotas.filter((quota) => hidden.has(getQuotaVisibilityKey(quota)));
+}
+
+/**
+ * Aggregate quota across every active account of each provider, so a user with
+ * several accounts (e.g. five Kiro logins) sees a single summed bar per quota
+ * bucket instead of doing mental math (#4639).
+ *
+ * Preconditions: `connections` is the full list of accounts to pool (the Totals
+ * view passes every page's connections, not just the current one); `quotaData`
+ * is keyed by connection id and only holds rows for connections whose quota has
+ * been fetched, so totals reflect the loaded accounts.
+ *
+ * @param {Array<Object>} connections - Connections to pool (each with provider/id/isActive)
+ * @param {Object} quotaData - { [connectionId]: { quotas: [...] } }
+ * @param {Object} quotaVisibility - Persisted hidden-quota settings
+ * @returns {Array<Object>} [{ provider, label, accountCount, buckets: [{ key, name, used, total, remaining, accountCount, resetAt }] }]
+ *   Only active accounts and summable buckets (total > 0, not unlimited, not a
+ *   credit balance) are aggregated. Providers with no summable bucket are omitted.
+ */
+export function aggregateProviderTotals(connections, quotaData, quotaVisibility) {
+  if (!Array.isArray(connections) || connections.length === 0) return [];
+
+  const providerBuckets = new Map(); // providerId -> Map(bucketKey -> bucket)
+  const providerActiveCount = new Map(); // providerId -> number of active accounts
+
+  for (const conn of connections) {
+    const provider = conn.provider;
+    if (!provider || conn.isActive === false) continue;
+    providerActiveCount.set(provider, (providerActiveCount.get(provider) || 0) + 1);
+
+    if (!providerBuckets.has(provider)) providerBuckets.set(provider, new Map());
+    const buckets = providerBuckets.get(provider);
+
+    const rawQuotas = (quotaData[conn.id]?.quotas) || [];
+    const visibleQuotas = filterQuotasByVisibility(provider, rawQuotas, quotaVisibility || {});
+
+    for (const quota of visibleQuotas) {
+      const total = Number(quota.total) || 0;
+      // Unlimited and credit-balance rows have no summable window; skip them.
+      if (total <= 0 || quota.unlimited === true || quota.isCreditBalance === true) continue;
+
+      const key = getQuotaVisibilityKey(quota) || quota.name || "total";
+      let bucket = buckets.get(key);
+      if (!bucket) {
+        bucket = { key, name: quota.name || key, used: 0, total: 0, resetTimes: [], accounts: new Set() };
+        buckets.set(key, bucket);
+      }
+      bucket.used += Number(quota.used) || 0;
+      bucket.total += total;
+      bucket.accounts.add(conn.id);
+      if (quota.resetAt) bucket.resetTimes.push(quota.resetAt);
+    }
+  }
+
+  const result = [];
+  for (const [provider, buckets] of providerBuckets.entries()) {
+    const rows = Array.from(buckets.values())
+      .map((b) => {
+        let earliestReset = null;
+        for (const t of b.resetTimes) {
+          const ms = new Date(t).getTime();
+          if (Number.isFinite(ms) && (earliestReset === null || ms < earliestReset)) earliestReset = ms;
+        }
+        return {
+          key: b.key,
+          name: b.name,
+          used: b.used,
+          total: b.total,
+          remaining: calculatePercentage(b.used, b.total),
+          accountCount: b.accounts.size,
+          resetAt: earliestReset === null ? null : new Date(earliestReset).toISOString(),
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    if (rows.length === 0) continue;
+    result.push({ provider, accountCount: providerActiveCount.get(provider) || 0, buckets: rows });
+  }
+
+  return result;
 }
 
 /**

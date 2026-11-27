@@ -88,21 +88,17 @@ That's it! Start coding with FREE AI models.
 
 **Dashboard**: `http://localhost:20128/dashboard`
 
-### Cloudflare WARP setup
+### Cloudflare WARP
 
-For WARP proxy pools, install the helper binaries once on the same machine that runs the 9Router server. With the npm-installed CLI, run this from any directory:
+WARP helper binaries (`wgcf` + `wireproxy`) are **auto-downloaded on first use** of a WARP proxy pool — no setup step needed on Windows, macOS, or Linux. The server fetches the latest release assets into the data dir and starts the tunnel.
 
-```bash
-9router warp setup
-```
-
-Or, without a global install:
+If auto-install fails (offline host, or a platform with no release asset — e.g. some 32-bit / ARM builds), install them manually once on the machine running 9Router:
 
 ```bash
-npx 9router warp setup
+9router warp setup        # or: npx 9router warp setup
 ```
 
-Then create a WARP pool in Dashboard → Proxy Pools. The first request registers a WARP account and starts the tunnel. If running from a source checkout, `npm run warp:setup` from the repository root does the same setup.
+From a source checkout, `npm run warp:setup` does the same. Then create a WARP pool in Dashboard → Proxy Pools; the first request registers a WARP account and starts the tunnel.
 
 ---
 

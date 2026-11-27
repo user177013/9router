@@ -211,7 +211,8 @@ Commands:
   xai video --prompt "..." --output video.mp4
                       Generate a Grok Imagine video via the running gateway
                       (see: ${APP_NAME} xai video --help)
-  warp setup          Install WARP helper binaries for this machine
+  warp setup          Install WARP helper binaries (auto-downloaded on first use;
+                      run this only if auto-install fails)
 `);
     process.exit(0);
   } else if (args[i] === "--version" || args[i] === "-v") {

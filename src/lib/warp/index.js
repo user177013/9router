@@ -42,12 +42,31 @@ function findBin(name) {
   return fs.existsSync(p) ? p : null;
 }
 
-function ensureRuntime() {
-  const wgcf = findBin("wgcf");
-  const wireproxy = findBin("wireproxy");
+let autoInstallPromise = null;
+
+async function ensureRuntime() {
+  let wgcf = findBin("wgcf");
+  let wireproxy = findBin("wireproxy");
+  if (wgcf && wireproxy) return { wgcf, wireproxy };
+
+  // Auto-install on first use. Single-flight so concurrent callers share one
+  // download; null the promise on failure so a later call can retry.
+  if (!autoInstallPromise) {
+    autoInstallPromise = import("./install.js")
+      .then((mod) => mod.ensureWarpBinaries())
+      .catch((e) => { autoInstallPromise = null; throw e; });
+  }
+  try {
+    await autoInstallPromise;
+  } catch (e) {
+    log("INSTALL", `auto-install failed: ${String(e.message || e)}`);
+  }
+  wgcf = findBin("wgcf");
+  wireproxy = findBin("wireproxy");
   if (!wgcf || !wireproxy) {
     throw new Error(
-      `wgcf/wireproxy binaries not found in ${binDir} — run node scripts/warp-setup.mjs once (or set WARP_WGCF_PATH / WARP_WIREPROXY_PATH)`
+      `wgcf/wireproxy binaries not found in ${binDir} — auto-install failed or unsupported platform; ` +
+      `run \`9router warp setup\` manually (or set WARP_WGCF_PATH / WARP_WIREPROXY_PATH)`
     );
   }
   return { wgcf, wireproxy };
@@ -166,7 +185,7 @@ async function registerNewAccount() {
   if (hadAccount) fs.copyFileSync(ACCOUNT_TOML, backup);
   if (fs.existsSync(ACCOUNT_TOML)) fs.rmSync(ACCOUNT_TOML);
 
-  const { wgcf } = ensureRuntime();
+  const { wgcf } = await ensureRuntime();
   const reg = await run(wgcf, ["register", "--accept-tos"]);
   if (reg.code !== 0 || !fs.existsSync(ACCOUNT_TOML)) {
     if (hadAccount && fs.existsSync(backup)) {
@@ -178,7 +197,7 @@ async function registerNewAccount() {
 }
 
 async function generateProfile() {
-  const { wgcf } = ensureRuntime();
+  const { wgcf } = await ensureRuntime();
   const gen = await run(wgcf, ["generate"]);
   if (gen.code !== 0 || !fs.existsSync(PROFILE_CONF)) {
     return { ok: false, error: (gen.stderr || gen.stdout || "wgcf generate failed").trim().slice(0, 300) };
@@ -187,7 +206,7 @@ async function generateProfile() {
 }
 
 async function start() {
-  const { wireproxy } = ensureRuntime();
+  const { wireproxy } = await ensureRuntime();
 
   if (!fs.existsSync(ACCOUNT_TOML)) {
     const reg = await registerNewAccount();
@@ -272,7 +291,7 @@ export async function hop({ force = false, cooldownMs = HOP_COOLDOWN_MS } = {}) 
       break;
     }
 
-    const { wireproxy } = ensureRuntime();
+    const { wireproxy } = await ensureRuntime();
     writeWireproxyConf();
     await killStaleWireproxy();
     spawnChild(wireproxy);

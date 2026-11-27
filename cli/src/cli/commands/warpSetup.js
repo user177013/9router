@@ -9,8 +9,9 @@ const execFile = promisify(execFileCallback);
 const HELP = `
 Usage: 9router warp setup
 
-Download the WARP helper binaries for this machine and install them where the
-local 9Router server expects them. Run this on the machine hosting 9Router.
+Download the WARP helper binaries for this machine. Normally the server
+auto-installs them on first use — run this only if auto-install fails
+(offline host, unsupported platform, or a stale partial download).
 `;
 
 function getPlatformTarget(platform = process.platform, architecture = process.arch) {

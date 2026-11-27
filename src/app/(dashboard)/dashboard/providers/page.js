@@ -219,20 +219,42 @@ export default function ProvidersPage() {
 
   // Toggle all connections for a provider on/off. authType may be a single
   // string or an array (kiro counts oauth + api_key/apikey together).
+  //
+  // Disabling snapshots which keys were on (wasActiveBeforeProviderToggle), so
+  // re-enabling restores each key to its pre-toggle curation instead of
+  // mass-reactivating keys the user had individually disabled.
   const handleToggleProvider = async (providerId, authType, newActive) => {
     const authTypes = Array.isArray(authType) ? authType : [authType];
     const matches = (c) =>
       c.provider === providerId && authTypes.includes(c.authType);
     const providerConns = connections.filter(matches);
+
+    // Per-key decision + curation marker (the "was this key on before the switch?"
+    // value to persist so re-enabling the provider can restore each key's curation).
+    const decisions = providerConns.map((c) => {
+      if (newActive) {
+        // Reactivate keys that were on before the switch (marker true or absent,
+        // since connections default to active); keep individually-curated-off keys off.
+        return { conn: c, isActive: c.wasActiveBeforeProviderToggle !== false, marker: null };
+      }
+      // Mass-disable; remember which keys were on so a later re-enable restores them.
+      return { conn: c, isActive: false, marker: c.isActive !== false };
+    });
+
     setConnections((prev) =>
-      prev.map((c) => (matches(c) ? { ...c, isActive: newActive } : c)),
+      prev.map((c) => {
+        const d = decisions.find((x) => x.conn.id === c.id);
+        if (!d) return c;
+        return { ...c, isActive: d.isActive, wasActiveBeforeProviderToggle: d.marker };
+      }),
     );
+
     await Promise.allSettled(
-      providerConns.map((c) =>
-        fetch(`/api/providers/${c.id}`, {
+      decisions.map(({ conn, isActive, marker }) =>
+        fetch(`/api/providers/${conn.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ isActive: newActive }),
+          body: JSON.stringify({ isActive, wasActiveBeforeProviderToggle: marker }),
         }),
       ),
     );

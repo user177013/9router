@@ -92,7 +92,8 @@ export async function PUT(request, { params }) {
       testStatus,
       lastError,
       lastErrorAt,
-      providerSpecificData
+      providerSpecificData,
+      wasActiveBeforeProviderToggle
     } = body;
 
     const existing = await getProviderConnectionById(id);
@@ -116,6 +117,11 @@ export async function PUT(request, { params }) {
     if (globalPriority !== undefined) updateData.globalPriority = globalPriority;
     if (defaultModel !== undefined) updateData.defaultModel = defaultModel;
     if (isActive !== undefined) updateData.isActive = isActive;
+    // Persisted top-level so the provider toggle can remember which keys were
+    // individually on and restore that curation when the provider is re-enabled.
+    if (wasActiveBeforeProviderToggle !== undefined) {
+      updateData.wasActiveBeforeProviderToggle = wasActiveBeforeProviderToggle;
+    }
     if (apiKey && existing.authType === "apikey") updateData.apiKey = apiKey;
     if (testStatus !== undefined) updateData.testStatus = testStatus;
     if (lastError !== undefined) updateData.lastError = lastError;

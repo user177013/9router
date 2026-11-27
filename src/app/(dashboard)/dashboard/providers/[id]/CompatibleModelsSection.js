@@ -74,7 +74,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
 export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
-  const [importing, setImporting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [testingModelId, setTestingModelId] = useState(null);
   const [modelTestResults, setModelTestResults] = useState({});
 
@@ -122,48 +122,63 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     }
   };
 
-  const handleImport = async () => {
-    if (importing) return;
+  // Sync = mirror the local registry onto the live upstream /models set:
+  // fetch first (never wipe when upstream is unreachable), flush every model
+  // registered for this provider, then re-import the freshly-fetched set.
+  const handleSync = async () => {
+    if (syncing) return;
     const activeConnection = connections.find((conn) => conn.isActive !== false);
     if (!activeConnection) return;
 
-    setImporting(true);
+    setSyncing(true);
     try {
       const res = await fetch(`/api/providers/${activeConnection.id}/models`);
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Failed to import models");
+        alert(data.error || "Failed to fetch /models");
         return;
       }
-      const models = data.models || [];
-      if (models.length === 0) {
-        alert("No models returned from /models.");
+      // De-dupe + drop empties; a model may surface as id, name, or model.
+      const upstream = [
+        ...new Set((data.models || []).map((m) => m.id || m.name || m.model).filter(Boolean)),
+      ];
+      if (upstream.length === 0) {
+        alert("No models returned from /models. Nothing was changed.");
         return;
       }
-      let importedCount = 0;
-      for (const model of models) {
-        const modelId = model.id || model.name || model.model;
-        if (!modelId) continue;
-        if (allModels.some((entry) => entry.id === modelId)) continue;
+
+      // The flush is destructive and wipes hand-typed models too — gate it
+      // on an explicit confirm that names both counts, but only when there's
+      // actually something local to remove.
+      if (allModels.length > 0) {
+        const proceed = confirm(
+          `Sync from /models will replace the ${allModels.length} registered model(s) with ${upstream.length} from the upstream endpoint. Hand-added models will be removed. Continue?`,
+        );
+        if (!proceed) return;
+        for (const entry of allModels) {
+          if (entry.source === "custom") await onDeleteCustomModel(entry.id);
+          else await onDeleteAlias(entry.alias);
+        }
+      }
+
+      // Nothing remains locally after the flush, so add the whole upstream set
+      // unconditionally (deduped against the fetched list, not stale state).
+      for (const modelId of upstream) {
         await onAddCustomModel(modelId);
-        importedCount += 1;
-      }
-      if (importedCount === 0) {
-        alert("No new models were added.");
       }
     } catch (error) {
-      console.log("Error importing models:", error);
+      console.log("Error syncing models:", error);
     } finally {
-      setImporting(false);
+      setSyncing(false);
     }
   };
 
-  const canImport = connections.some((conn) => conn.isActive !== false);
+  const canSync = connections.some((conn) => conn.isActive !== false);
 
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-text-muted">
-        Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually or import them from the /models endpoint.
+        Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually, or sync this provider&apos;s registry from the /models endpoint.
       </p>
 
       <div className="flex items-end gap-2 flex-wrap">
@@ -182,14 +197,14 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>
           {adding ? "Adding..." : "Add"}
         </Button>
-        <Button size="sm" variant="secondary" icon="download" onClick={handleImport} disabled={!canImport || importing}>
-          {importing ? "Importing..." : "Import from /models"}
+        <Button size="sm" variant="secondary" icon="sync" onClick={handleSync} disabled={!canSync || syncing}>
+          {syncing ? "Syncing..." : "Sync from /models"}
         </Button>
       </div>
 
-      {!canImport && (
+      {!canSync && (
         <p className="text-xs text-text-muted">
-          Add a connection to enable importing models.
+          Add a connection to enable syncing models.
         </p>
       )}
 

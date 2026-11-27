@@ -659,7 +659,7 @@ export default function ModelSelectModal({
           {allowProviderWildcard
             ? "Click to add/remove a model, or click a provider name for wildcard (e.g. provider/*). Search supports exclusions (e.g. claude -haiku) and RegEx (/pattern/)."
             : allowDuplicates
-              ? "Click to add. Clicking an added model again adds another seat (duplicates are allowed — used for best-of-N / zigzag fallback). Search supports exclusions (e.g. claude -haiku) and RegEx (/pattern/)."
+              ? "Click to add. Clicking an added model again adds another seat (duplicates are allowed — used for best-of-N / zigzag fallback). Click the ✕ on an added model to remove one seat. Search supports exclusions (e.g. claude -haiku) and RegEx (/pattern/)."
               : "Click to add, click again to remove. Search supports exclusions (e.g. claude -haiku) and RegEx (/pattern/)."}
         </span>
       </div>
@@ -766,10 +766,33 @@ export default function ModelSelectModal({
                       }
                     `}
                   >
-                    {addedModelValues.includes(combo.name) && (
-                      <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
-                    )}
                     {combo.name}
+                    {addedModelValues.includes(combo.name) && (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeselect?.({ id: combo.name, name: combo.name, value: combo.name });
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onDeselect?.({ id: combo.name, name: combo.name, value: combo.name });
+                          }
+                        }}
+                        title="Remove one seat"
+                        aria-label="Remove one seat"
+                        className="flex cursor-pointer items-center gap-0.5 rounded px-0.5 text-white/80 outline-none transition-colors hover:bg-white/25 hover:text-white focus-visible:ring-1 focus-visible:ring-white/60"
+                        style={{ fontSize: "10px" }}
+                      >
+                        <span className="material-symbols-outlined leading-none" style={{ fontSize: "11px" }}>close</span>
+                        {(valueCounts[combo.name] || 0) > 1 && (
+                          <span className="font-bold tabular-nums">{valueCounts[combo.name]}</span>
+                        )}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -844,14 +867,6 @@ export default function ModelSelectModal({
                     `}
                   >
                     <span className="flex items-center gap-1">
-                      {addedModelValues.includes(model.value) && !isPlaceholder && (
-                        <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
-                      )}
-                      {allowDuplicates && (valueCounts[model.value] || 0) > 1 && !isPlaceholder && (
-                        <span className="text-[9px] font-bold px-1 rounded bg-white/20 text-white" title="Added multiple times">
-                          ×{valueCounts[model.value]}
-                        </span>
-                      )}
                       {isPlaceholder ? (
                         <>
                           <span className="material-symbols-outlined text-[11px]">edit</span>
@@ -868,6 +883,32 @@ export default function ModelSelectModal({
                           {model.name}
                           <CapacityBadges caps={getCaps(model.value)} />
                         </>
+                      )}
+                      {addedModelValues.includes(model.value) && !isPlaceholder && (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeselect?.(model);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              onDeselect?.(model);
+                            }
+                          }}
+                          title="Remove one seat"
+                          aria-label="Remove one seat"
+                          className="flex cursor-pointer items-center gap-0.5 rounded px-0.5 text-white/80 outline-none transition-colors hover:bg-white/25 hover:text-white focus-visible:ring-1 focus-visible:ring-white/60"
+                          style={{ fontSize: "10px" }}
+                        >
+                          <span className="material-symbols-outlined leading-none" style={{ fontSize: "11px" }}>close</span>
+                          {(valueCounts[model.value] || 0) > 1 && (
+                            <span className="font-bold tabular-nums">{valueCounts[model.value]}</span>
+                          )}
+                        </span>
                       )}
                     </span>
                   </button>
